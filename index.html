@@ -78,7 +78,7 @@
             margin-bottom: 40px;
         }
         
-        .start-btn {
+        .start-btn, .next-btn, .retry-btn {
             background: linear-gradient(135deg, #d4a574 0%, #8b5a2b 100%);
             border: none;
             padding: 15px 50px;
@@ -91,7 +91,9 @@
             font-family: inherit;
         }
         
-        .start-btn:hover, .start-btn:active {
+        .start-btn:hover, .start-btn:active,
+        .next-btn:hover, .next-btn:active,
+        .retry-btn:hover, .retry-btn:active {
             transform: scale(1.05);
             box-shadow: 0 15px 40px rgba(0,0,0,0.4);
         }
@@ -212,14 +214,14 @@
             100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
         }
         
-        /* Level Transition */
-        #levelTransition {
+        /* Level Complete Screen */
+        #levelCompleteScreen {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.9);
+            background: rgba(0,0,0,0.7);
             display: none;
             justify-content: center;
             align-items: center;
@@ -228,25 +230,38 @@
             color: #fff;
         }
         
-        .transition-text {
-            font-size: clamp(1.5rem, 5vw, 2.5rem);
-            margin-bottom: 20px;
-            text-align: center;
+        .complete-title {
+            font-size: clamp(2rem, 7vw, 3.5rem);
+            margin-bottom: 15px;
+            text-shadow: 0 0 30px rgba(255, 215, 0, 0.8);
+            animation: celebratePulse 0.5s ease-in-out infinite alternate;
         }
         
-        .transition-subtitle {
-            font-size: clamp(1rem, 3vw, 1.3rem);
+        @keyframes celebratePulse {
+            from { transform: scale(1); }
+            to { transform: scale(1.05); }
+        }
+        
+        .complete-subtitle {
+            font-size: clamp(1rem, 3vw, 1.4rem);
             color: #d4a574;
+            margin-bottom: 30px;
         }
         
-        /* Game Over / Win Screen */
+        .next-btn {
+            padding: 12px 40px;
+            font-size: 1.2rem;
+            pointer-events: auto;
+        }
+        
+        /* Game Over Screen */
         #endScreen {
             position: fixed;
             top: 0;
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0,0,0,0.85);
+            background: rgba(0,0,0,0.7);
             display: none;
             justify-content: center;
             align-items: center;
@@ -269,14 +284,40 @@
         }
         
         .retry-btn {
-            background: linear-gradient(135deg, #d4a574 0%, #8b5a2b 100%);
-            border: none;
             padding: 12px 40px;
             font-size: 1.2rem;
+            pointer-events: auto;
+        }
+        
+        /* Win Screen (Final) */
+        #winScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 600;
             color: #fff;
-            border-radius: 50px;
-            cursor: pointer;
-            font-family: inherit;
+        }
+        
+        .win-title {
+            font-size: clamp(2.5rem, 8vw, 4rem);
+            margin-bottom: 20px;
+            text-shadow: 0 0 40px rgba(255, 215, 0, 0.9);
+            animation: celebratePulse 0.5s ease-in-out infinite alternate;
+        }
+        
+        .win-message {
+            font-size: clamp(1.1rem, 3.5vw, 1.5rem);
+            color: #ffd700;
+            margin-bottom: 30px;
+            text-align: center;
+            padding: 0 20px;
         }
         
         /* Mirage Effect */
@@ -339,17 +380,25 @@
     <!-- Mirage Overlay -->
     <div id="mirageOverlay"></div>
     
-    <!-- Level Transition -->
-    <div id="levelTransition">
-        <div class="transition-text" id="transitionText">المرحلة الثانية</div>
-        <div class="transition-subtitle" id="transitionSubtitle">استعد للعصر الحار...</div>
+    <!-- Level Complete Screen -->
+    <div id="levelCompleteScreen">
+        <div class="complete-title" id="completeTitle">🎉 أحسنت!</div>
+        <div class="complete-subtitle" id="completeSubtitle">وصلت لمحطة البنزين!</div>
+        <button class="next-btn" id="nextLevelBtn">➡️ المرحلة التالية</button>
     </div>
     
-    <!-- End Screen -->
+    <!-- Game Over Screen -->
     <div id="endScreen">
-        <div class="end-title" id="endTitle">🎉 مبروك!</div>
-        <div class="end-message" id="endMessage">وصلت للمخيم بسلام!</div>
-        <button class="retry-btn" id="retryBtn">🔄 العب مجدداً</button>
+        <div class="end-title" id="endTitle">⛽ نفذ الوقود!</div>
+        <div class="end-message" id="endMessage">لم تستطع الوصول في الوقت المناسب.</div>
+        <button class="retry-btn" id="retryBtn">🔄 حاول مجدداً</button>
+    </div>
+    
+    <!-- Final Win Screen -->
+    <div id="winScreen">
+        <div class="win-title">🏆 مبروك!</div>
+        <div class="win-message">وصلت للمخيم الصحراوي بسلام!<br>أنت ناجٍ حقيقي!</div>
+        <button class="retry-btn" id="playAgainBtn">🔄 العب من البداية</button>
     </div>
 
     <script type="importmap">
@@ -422,6 +471,9 @@
                 gravity: 30,
                 groundOffset: 0.6,
                 terrainFollowSpeed: 0.2
+            },
+            camera: {
+                rotationDuration: 3.5 // seconds for 360 rotation
             }
         };
         
@@ -516,7 +568,6 @@
             playCrash() {
                 if (!this.initialized) return;
                 
-                // Impact noise
                 const bufferSize = this.ctx.sampleRate * 0.4;
                 const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
                 const data = buffer.getChannelData(0);
@@ -541,7 +592,6 @@
                 gain.connect(this.masterGain);
                 noiseSource.start();
                 
-                // Metal clang
                 const osc = this.ctx.createOscillator();
                 osc.type = 'triangle';
                 osc.frequency.value = 120;
@@ -559,8 +609,7 @@
             playFuelPickup() {
                 if (!this.initialized) return;
                 
-                // Pleasant chime sound
-                const frequencies = [523, 659, 784]; // C5, E5, G5
+                const frequencies = [523, 659, 784];
                 
                 frequencies.forEach((freq, i) => {
                     const osc = this.ctx.createOscillator();
@@ -579,19 +628,101 @@
                 });
             }
             
-            playLevelComplete() {
+            playCelebration() {
                 if (!this.initialized) return;
-                const osc = this.ctx.createOscillator();
-                const gain = this.ctx.createGain();
-                osc.type = 'sine';
-                osc.frequency.value = 440;
-                gain.gain.value = 0.2;
-                osc.connect(gain);
-                gain.connect(this.masterGain);
-                osc.start();
-                osc.frequency.setTargetAtTime(880, this.ctx.currentTime, 0.1);
-                gain.gain.setTargetAtTime(0.01, this.ctx.currentTime, 0.3);
-                osc.stop(this.ctx.currentTime + 0.4);
+                
+                // Triumphant fanfare
+                const notes = [
+                    { freq: 523, time: 0, dur: 0.15 },      // C5
+                    { freq: 659, time: 0.12, dur: 0.15 },   // E5
+                    { freq: 784, time: 0.24, dur: 0.15 },   // G5
+                    { freq: 1047, time: 0.36, dur: 0.4 },   // C6 (held)
+                    { freq: 784, time: 0.6, dur: 0.15 },    // G5
+                    { freq: 1047, time: 0.75, dur: 0.5 },   // C6 (final)
+                ];
+                
+                notes.forEach(note => {
+                    const osc = this.ctx.createOscillator();
+                    osc.type = 'sine';
+                    osc.frequency.value = note.freq;
+                    
+                    const gain = this.ctx.createGain();
+                    gain.gain.value = 0;
+                    gain.gain.setTargetAtTime(0.25, this.ctx.currentTime + note.time, 0.02);
+                    gain.gain.setTargetAtTime(0, this.ctx.currentTime + note.time + note.dur, 0.1);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(this.ctx.currentTime + note.time);
+                    osc.stop(this.ctx.currentTime + note.time + note.dur + 0.2);
+                });
+                
+                // Add sparkle effect
+                for (let i = 0; i < 8; i++) {
+                    const sparkle = this.ctx.createOscillator();
+                    sparkle.type = 'sine';
+                    sparkle.frequency.value = 2000 + Math.random() * 2000;
+                    
+                    const sGain = this.ctx.createGain();
+                    sGain.gain.value = 0;
+                    const startTime = this.ctx.currentTime + 0.3 + i * 0.1;
+                    sGain.gain.setTargetAtTime(0.08, startTime, 0.01);
+                    sGain.gain.setTargetAtTime(0, startTime + 0.05, 0.02);
+                    
+                    sparkle.connect(sGain);
+                    sGain.connect(this.masterGain);
+                    sparkle.start(startTime);
+                    sparkle.stop(startTime + 0.15);
+                }
+            }
+            
+            playDefeat() {
+                if (!this.initialized) return;
+                
+                // Sad descending tones
+                const notes = [
+                    { freq: 400, time: 0, dur: 0.3 },
+                    { freq: 350, time: 0.25, dur: 0.3 },
+                    { freq: 300, time: 0.5, dur: 0.3 },
+                    { freq: 250, time: 0.75, dur: 0.5 },
+                ];
+                
+                notes.forEach(note => {
+                    const osc = this.ctx.createOscillator();
+                    osc.type = 'triangle';
+                    osc.frequency.value = note.freq;
+                    
+                    const gain = this.ctx.createGain();
+                    gain.gain.value = 0;
+                    gain.gain.setTargetAtTime(0.2, this.ctx.currentTime + note.time, 0.02);
+                    gain.gain.setTargetAtTime(0, this.ctx.currentTime + note.time + note.dur, 0.15);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(this.ctx.currentTime + note.time);
+                    osc.stop(this.ctx.currentTime + note.time + note.dur + 0.3);
+                });
+                
+                // Add low rumble
+                const noise = this.ctx.createBufferSource();
+                const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 1.5, this.ctx.sampleRate);
+                const noiseData = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < noiseData.length; i++) {
+                    noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseData.length, 0.5);
+                }
+                noise.buffer = noiseBuffer;
+                
+                const noiseFilter = this.ctx.createBiquadFilter();
+                noiseFilter.type = 'lowpass';
+                noiseFilter.frequency.value = 150;
+                
+                const noiseGain = this.ctx.createGain();
+                noiseGain.gain.value = 0.15;
+                
+                noise.connect(noiseFilter);
+                noiseFilter.connect(noiseGain);
+                noiseGain.connect(this.masterGain);
+                noise.start();
             }
         }
         
@@ -610,7 +741,11 @@
             vehicleY: 0,
             isGrounded: true,
             cargoItems: [],
-            lastCollisionTime: 0
+            lastCollisionTime: 0,
+            cameraRotating: false,
+            cameraRotationStart: 0,
+            cameraRotationType: null, // 'win' or 'lose'
+            showNextButton: false
         };
         
         // ============= THREE.JS SETUP =============
@@ -624,7 +759,6 @@
         let goalMarker;
         const audio = new AudioSystem();
         
-        // Terrain constants
         const TERRAIN_CHUNK_SIZE = 50;
         const TERRAIN_RESOLUTION = 40;
         
@@ -637,13 +771,16 @@
         const distanceText = document.getElementById('distanceText');
         const touchHint = document.getElementById('touchHint');
         const fuelNotification = document.getElementById('fuelNotification');
-        const levelTransition = document.getElementById('levelTransition');
-        const transitionText = document.getElementById('transitionText');
-        const transitionSubtitle = document.getElementById('transitionSubtitle');
+        const levelCompleteScreen = document.getElementById('levelCompleteScreen');
+        const completeTitle = document.getElementById('completeTitle');
+        const completeSubtitle = document.getElementById('completeSubtitle');
+        const nextLevelBtn = document.getElementById('nextLevelBtn');
         const endScreen = document.getElementById('endScreen');
         const endTitle = document.getElementById('endTitle');
         const endMessage = document.getElementById('endMessage');
         const retryBtn = document.getElementById('retryBtn');
+        const winScreen = document.getElementById('winScreen');
+        const playAgainBtn = document.getElementById('playAgainBtn');
         const mirageOverlay = document.getElementById('mirageOverlay');
         
         // ============= BACKGROUND ANIMATION =============
@@ -727,20 +864,19 @@
         function createVehicle() {
             const group = new THREE.Group();
             
-            // Colors
-            const bodyColor = 0xD4B896; // Beige sandy
+            const bodyColor = 0xD4B896;
             const darkColor = 0x1a1a1a;
             const chromeColor = 0xcccccc;
             const glassColor = 0x87CEEB;
             
-            // === CHASSIS / FRAME ===
+            // === CHASSIS ===
             const chassisGeom = new THREE.BoxGeometry(2.0, 0.25, 5.5);
             const chassisMat = new THREE.MeshStandardMaterial({ color: darkColor, roughness: 0.8 });
             const chassis = new THREE.Mesh(chassisGeom, chassisMat);
             chassis.position.y = 0.4;
             group.add(chassis);
             
-            // === FRONT SECTION (Engine Hood) ===
+            // === FRONT SECTION ===
             const hoodGeom = new THREE.BoxGeometry(2.0, 0.6, 1.8);
             const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.6, metalness: 0.1 });
             const hood = new THREE.Mesh(hoodGeom, bodyMat);
@@ -748,7 +884,6 @@
             hood.castShadow = true;
             group.add(hood);
             
-            // Hood lines (details)
             const hoodLineGeom = new THREE.BoxGeometry(0.05, 0.02, 1.6);
             const hoodLineMat = new THREE.MeshStandardMaterial({ color: 0xaaa080 });
             [-0.5, 0.5].forEach(x => {
@@ -764,7 +899,6 @@
             grille.position.set(0, 0.95, 2.95);
             group.add(grille);
             
-            // Grille bars
             for (let i = -0.6; i <= 0.6; i += 0.15) {
                 const barGeom = new THREE.BoxGeometry(0.03, 0.4, 0.05);
                 const bar = new THREE.Mesh(barGeom, grilleMat);
@@ -772,17 +906,15 @@
                 group.add(bar);
             }
             
-            // === BULL BAR (Front Protection) ===
+            // === BULL BAR ===
             const bullBarMat = new THREE.MeshStandardMaterial({ color: darkColor, roughness: 0.7 });
             
-            // Main horizontal bar
             const mainBarGeom = new THREE.CylinderGeometry(0.06, 0.06, 2.2, 8);
             const mainBar = new THREE.Mesh(mainBarGeom, bullBarMat);
             mainBar.rotation.z = Math.PI / 2;
             mainBar.position.set(0, 0.8, 3.15);
             group.add(mainBar);
             
-            // Vertical supports
             [-0.9, 0.9].forEach(x => {
                 const supportGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
                 const support = new THREE.Mesh(supportGeom, bullBarMat);
@@ -791,14 +923,12 @@
             });
             
             // === CABIN ===
-            // Main cabin body
             const cabinGeom = new THREE.BoxGeometry(2.0, 1.1, 1.6);
             const cabin = new THREE.Mesh(cabinGeom, bodyMat);
             cabin.position.set(0, 1.65, 0.5);
             cabin.castShadow = true;
             group.add(cabin);
             
-            // Cabin roof
             const roofGeom = new THREE.BoxGeometry(1.9, 0.15, 1.5);
             const roof = new THREE.Mesh(roofGeom, bodyMat);
             roof.position.set(0, 2.28, 0.5);
@@ -814,14 +944,12 @@
                 opacity: 0.7
             });
             
-            // Front windshield (angled)
             const windshieldGeom = new THREE.BoxGeometry(1.6, 0.7, 0.08);
             const windshield = new THREE.Mesh(windshieldGeom, windowMat);
             windshield.position.set(0, 1.75, 1.35);
             windshield.rotation.x = -0.15;
             group.add(windshield);
             
-            // Side windows
             const sideWindowGeom = new THREE.BoxGeometry(0.08, 0.5, 0.8);
             [-1.0, 1.0].forEach(x => {
                 const sideWindow = new THREE.Mesh(sideWindowGeom, windowMat);
@@ -829,22 +957,19 @@
                 group.add(sideWindow);
             });
             
-            // Rear window
             const rearWindowGeom = new THREE.BoxGeometry(1.4, 0.45, 0.08);
             const rearWindow = new THREE.Mesh(rearWindowGeom, windowMat);
             rearWindow.position.set(0, 1.75, -0.28);
             group.add(rearWindow);
             
-            // === DOORS (visible lines) ===
+            // === DOORS ===
             const doorLineMat = new THREE.MeshStandardMaterial({ color: 0x8a7a5a });
             [-0.99, 0.99].forEach(x => {
-                // Vertical door line
                 const vLineGeom = new THREE.BoxGeometry(0.02, 0.9, 0.03);
                 const vLine = new THREE.Mesh(vLineGeom, doorLineMat);
                 vLine.position.set(x * 0.5, 1.2, 0.5);
                 group.add(vLine);
                 
-                // Door handle
                 const handleGeom = new THREE.BoxGeometry(0.15, 0.06, 0.05);
                 const handleMat = new THREE.MeshStandardMaterial({ color: chromeColor, metalness: 0.9 });
                 const handle = new THREE.Mesh(handleGeom, handleMat);
@@ -859,10 +984,8 @@
             bedFloor.castShadow = true;
             group.add(bedFloor);
             
-            // Bed walls
             const bedWallMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.7 });
             
-            // Side walls
             const sideWallGeom = new THREE.BoxGeometry(0.08, 0.5, 2.2);
             [-0.95, 0.95].forEach(x => {
                 const sideWall = new THREE.Mesh(sideWallGeom, bedWallMat);
@@ -871,29 +994,37 @@
                 group.add(sideWall);
             });
             
-            // Rear wall (tailgate)
             const tailgateGeom = new THREE.BoxGeometry(1.9, 0.5, 0.08);
             const tailgate = new THREE.Mesh(tailgateGeom, bedWallMat);
             tailgate.position.set(0, 1.15, -2.5);
             tailgate.castShadow = true;
             group.add(tailgate);
             
-            // Front wall of bed
             const bedFrontGeom = new THREE.BoxGeometry(1.9, 0.5, 0.08);
             const bedFront = new THREE.Mesh(bedFrontGeom, bedWallMat);
             bedFront.position.set(0, 1.15, -0.35);
             group.add(bedFront);
             
-            // === CARGO IN BED ===
+            // === CARGO ===
             group.cargo = [];
             
+            // Cargo bounds for invisible barrier
+            const cargoBounds = {
+                minX: -0.75,
+                maxX: 0.75,
+                minZ: -2.35,
+                maxZ: -0.5,
+                minY: 0.95
+            };
+            group.cargoBounds = cargoBounds;
+            
             // Barrel
-            const barrelGeom = new THREE.CylinderGeometry(0.3, 0.3, 0.7, 12);
+            const barrelGeom = new THREE.CylinderGeometry(0.28, 0.28, 0.65, 12);
             const barrelMat = new THREE.MeshStandardMaterial({ color: 0x2255aa, roughness: 0.6 });
             const barrel = new THREE.Mesh(barrelGeom, barrelMat);
-            barrel.position.set(-0.5, 1.3, -1.8);
+            barrel.position.set(-0.4, 1.28, -1.8);
             barrel.userData = {
-                originalPos: new THREE.Vector3(-0.5, 1.3, -1.8),
+                originalPos: new THREE.Vector3(-0.4, 1.28, -1.8),
                 velocity: new THREE.Vector3(0, 0, 0),
                 fallen: false
             };
@@ -902,12 +1033,12 @@
             group.cargo.push(barrel);
             
             // Crate 1
-            const crateGeom = new THREE.BoxGeometry(0.5, 0.4, 0.5);
+            const crateGeom = new THREE.BoxGeometry(0.45, 0.38, 0.45);
             const crateMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 });
             const crate1 = new THREE.Mesh(crateGeom, crateMat);
-            crate1.position.set(0.4, 1.15, -1.2);
+            crate1.position.set(0.35, 1.12, -1.1);
             crate1.userData = {
-                originalPos: new THREE.Vector3(0.4, 1.15, -1.2),
+                originalPos: new THREE.Vector3(0.35, 1.12, -1.1),
                 velocity: new THREE.Vector3(0, 0, 0),
                 fallen: false
             };
@@ -917,9 +1048,9 @@
             
             // Crate 2
             const crate2 = new THREE.Mesh(crateGeom, crateMat);
-            crate2.position.set(0.3, 1.15, -2.0);
+            crate2.position.set(0.25, 1.12, -2.0);
             crate2.userData = {
-                originalPos: new THREE.Vector3(0.3, 1.15, -2.0),
+                originalPos: new THREE.Vector3(0.25, 1.12, -2.0),
                 velocity: new THREE.Vector3(0, 0, 0),
                 fallen: false
             };
@@ -927,13 +1058,13 @@
             group.add(crate2);
             group.cargo.push(crate2);
             
-            // Jerry can (fuel can shape)
-            const jerryGeom = new THREE.BoxGeometry(0.25, 0.4, 0.15);
+            // Jerry can
+            const jerryGeom = new THREE.BoxGeometry(0.22, 0.38, 0.14);
             const jerryMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.5 });
             const jerry = new THREE.Mesh(jerryGeom, jerryMat);
-            jerry.position.set(-0.5, 1.15, -1.2);
+            jerry.position.set(-0.4, 1.12, -1.1);
             jerry.userData = {
-                originalPos: new THREE.Vector3(-0.5, 1.15, -1.2),
+                originalPos: new THREE.Vector3(-0.4, 1.12, -1.1),
                 velocity: new THREE.Vector3(0, 0, 0),
                 fallen: false
             };
@@ -941,17 +1072,17 @@
             group.add(jerry);
             group.cargo.push(jerry);
             
-            // === WHEELS (Larger off-road style) ===
+            // === WHEELS ===
             const wheelGeom = new THREE.CylinderGeometry(0.55, 0.55, 0.35, 20);
             const wheelMat = new THREE.MeshStandardMaterial({ color: darkColor, roughness: 0.9 });
             const hubGeom = new THREE.CylinderGeometry(0.25, 0.25, 0.36, 12);
             const hubMat = new THREE.MeshStandardMaterial({ color: chromeColor, metalness: 0.7, roughness: 0.4 });
             
             const wheelPositions = [
-                [-1.1, 0.55, 1.8],  // Front left
-                [1.1, 0.55, 1.8],   // Front right
-                [-1.1, 0.55, -1.5], // Rear left
-                [1.1, 0.55, -1.5]   // Rear right
+                [-1.1, 0.55, 1.8],
+                [1.1, 0.55, 1.8],
+                [-1.1, 0.55, -1.5],
+                [1.1, 0.55, -1.5]
             ];
             
             group.wheels = [];
@@ -987,7 +1118,6 @@
                 group.add(headlight);
             });
             
-            // Headlight beams (for night)
             group.headlights = [];
             [-0.65, 0.65].forEach(x => {
                 const spotLight = new THREE.SpotLight(0xffffcc, 0, 60, 0.5, 0.5);
@@ -1027,7 +1157,6 @@
                 group.add(bar);
             });
             
-            // Rack supports
             [[-0.85, 0.2], [0.85, 0.2], [-0.85, 0.8], [0.85, 0.8]].forEach(([x, z]) => {
                 const supportGeom = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 6);
                 const support = new THREE.Mesh(supportGeom, rackMat);
@@ -1038,18 +1167,148 @@
             return group;
         }
         
+        // ============= PARKED VEHICLES =============
+        function createOldJeep(color) {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });
+            const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+            
+            // Body
+            const bodyGeom = new THREE.BoxGeometry(1.8, 0.8, 3.5);
+            const body = new THREE.Mesh(bodyGeom, mat);
+            body.position.y = 0.9;
+            body.castShadow = true;
+            group.add(body);
+            
+            // Cabin frame
+            const cabinGeom = new THREE.BoxGeometry(1.6, 0.8, 1.4);
+            const cabin = new THREE.Mesh(cabinGeom, mat);
+            cabin.position.set(0, 1.6, -0.3);
+            cabin.castShadow = true;
+            group.add(cabin);
+            
+            // Wheels
+            const wheelGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 12);
+            [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]].forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeom, darkMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                group.add(wheel);
+            });
+            
+            // Headlights
+            const lightGeom = new THREE.SphereGeometry(0.12, 8, 8);
+            const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0x333300 });
+            [-0.5, 0.5].forEach(x => {
+                const light = new THREE.Mesh(lightGeom, lightMat);
+                light.position.set(x, 0.9, 1.8);
+                group.add(light);
+            });
+            
+            return group;
+        }
+        
+        function createPickupTruck(color) {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
+            const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+            
+            // Cabin
+            const cabinGeom = new THREE.BoxGeometry(1.9, 1.0, 1.8);
+            const cabin = new THREE.Mesh(cabinGeom, mat);
+            cabin.position.set(0, 1.2, 0.8);
+            cabin.castShadow = true;
+            group.add(cabin);
+            
+            // Roof
+            const roofGeom = new THREE.BoxGeometry(1.8, 0.15, 1.6);
+            const roof = new THREE.Mesh(roofGeom, mat);
+            roof.position.set(0, 1.8, 0.8);
+            group.add(roof);
+            
+            // Hood
+            const hoodGeom = new THREE.BoxGeometry(1.9, 0.5, 1.2);
+            const hood = new THREE.Mesh(hoodGeom, mat);
+            hood.position.set(0, 0.9, 1.9);
+            hood.castShadow = true;
+            group.add(hood);
+            
+            // Bed
+            const bedGeom = new THREE.BoxGeometry(1.8, 0.1, 2.0);
+            const bed = new THREE.Mesh(bedGeom, mat);
+            bed.position.set(0, 0.75, -1.0);
+            group.add(bed);
+            
+            // Bed walls
+            const wallGeom = new THREE.BoxGeometry(0.08, 0.4, 2.0);
+            [-0.9, 0.9].forEach(x => {
+                const wall = new THREE.Mesh(wallGeom, mat);
+                wall.position.set(x, 0.95, -1.0);
+                group.add(wall);
+            });
+            
+            // Tailgate
+            const tailGeom = new THREE.BoxGeometry(1.8, 0.4, 0.08);
+            const tail = new THREE.Mesh(tailGeom, mat);
+            tail.position.set(0, 0.95, -2.0);
+            group.add(tail);
+            
+            // Wheels
+            const wheelGeom = new THREE.CylinderGeometry(0.45, 0.45, 0.3, 14);
+            [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]].forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeom, darkMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                group.add(wheel);
+            });
+            
+            return group;
+        }
+        
+        function createSmallTruck(color) {
+            const group = new THREE.Group();
+            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
+            const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+            
+            // Cabin
+            const cabinGeom = new THREE.BoxGeometry(2.0, 1.2, 1.5);
+            const cabin = new THREE.Mesh(cabinGeom, mat);
+            cabin.position.set(0, 1.3, 1.5);
+            cabin.castShadow = true;
+            group.add(cabin);
+            
+            // Cargo area
+            const cargoGeom = new THREE.BoxGeometry(2.0, 0.8, 3.0);
+            const cargo = new THREE.Mesh(cargoGeom, mat);
+            cargo.position.set(0, 1.0, -0.8);
+            cargo.castShadow = true;
+            group.add(cargo);
+            
+            // Wheels (6 wheels for truck)
+            const wheelGeom = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 14);
+            [
+                [-1.0, 0.5, 1.8], [1.0, 0.5, 1.8],
+                [-1.0, 0.5, -0.5], [1.0, 0.5, -0.5],
+                [-1.0, 0.5, -1.8], [1.0, 0.5, -1.8]
+            ].forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeom, darkMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                group.add(wheel);
+            });
+            
+            return group;
+        }
+        
         // ============= TERRAIN GENERATION =============
         function getTerrainHeight(x, z) {
             const level = CONFIG.levels[state.currentLevel];
             
             let height = 0;
-            
-            // Gentle rolling dunes
             height += Math.sin(x * 0.06 + z * 0.025) * level.duneHeight;
             height += Math.cos(x * 0.04 + z * 0.04) * level.duneHeight * 0.5;
             height += Math.sin(x * 0.12 + z * 0.06) * level.duneHeight * 0.25;
             
-            // Road depression in the middle
             const roadWidth = 10;
             const roadFactor = Math.exp(-(x * x) / (roadWidth * roadWidth));
             height *= (1 - roadFactor * 0.85);
@@ -1060,20 +1319,13 @@
         function createTerrainChunk(zPosition, chunkIndex) {
             const level = CONFIG.levels[state.currentLevel];
             
-            const geometry = new THREE.PlaneGeometry(
-                100,
-                TERRAIN_CHUNK_SIZE,
-                TERRAIN_RESOLUTION,
-                TERRAIN_RESOLUTION
-            );
-            
+            const geometry = new THREE.PlaneGeometry(100, TERRAIN_CHUNK_SIZE, TERRAIN_RESOLUTION, TERRAIN_RESOLUTION);
             const positions = geometry.attributes.position.array;
             
             for (let i = 0; i < positions.length; i += 3) {
                 const x = positions[i];
                 const localZ = positions[i + 1];
                 const worldZ = zPosition + localZ;
-                
                 positions[i + 2] = getTerrainHeight(x, worldZ);
             }
             
@@ -1098,12 +1350,8 @@
             mesh.position.y = 0;
             mesh.receiveShadow = true;
             
-            // Solid base underneath
             const baseGeometry = new THREE.BoxGeometry(100, 8, TERRAIN_CHUNK_SIZE);
-            const baseMaterial = new THREE.MeshStandardMaterial({
-                color: sandColors[level.timeOfDay],
-                roughness: 1
-            });
+            const baseMaterial = new THREE.MeshStandardMaterial({ color: sandColors[level.timeOfDay], roughness: 1 });
             const base = new THREE.Mesh(baseGeometry, baseMaterial);
             base.position.set(0, -4, zPosition);
             
@@ -1153,23 +1401,15 @@
         
         // ============= FUEL CANS =============
         function createFuelCan(z) {
-            const level = CONFIG.levels[state.currentLevel];
             const x = (Math.random() - 0.5) * 12;
-            
             const group = new THREE.Group();
             
-            // Jerry can shape
             const canGeom = new THREE.BoxGeometry(0.4, 0.6, 0.25);
-            const canMat = new THREE.MeshStandardMaterial({ 
-                color: 0x22aa22, 
-                roughness: 0.5,
-                metalness: 0.3
-            });
+            const canMat = new THREE.MeshStandardMaterial({ color: 0x22aa22, roughness: 0.5, metalness: 0.3 });
             const can = new THREE.Mesh(canGeom, canMat);
             can.castShadow = true;
             group.add(can);
             
-            // Handle
             const handleGeom = new THREE.TorusGeometry(0.1, 0.025, 8, 12, Math.PI);
             const handleMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
             const handle = new THREE.Mesh(handleGeom, handleMat);
@@ -1177,19 +1417,13 @@
             handle.rotation.x = Math.PI / 2;
             group.add(handle);
             
-            // Spout
             const spoutGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.15, 8);
             const spout = new THREE.Mesh(spoutGeom, handleMat);
             spout.position.set(0.1, 0.35, 0);
             group.add(spout);
             
-            // Glow effect
             const glowGeom = new THREE.SphereGeometry(0.5, 16, 16);
-            const glowMat = new THREE.MeshBasicMaterial({
-                color: 0x44ff44,
-                transparent: true,
-                opacity: 0.2
-            });
+            const glowMat = new THREE.MeshBasicMaterial({ color: 0x44ff44, transparent: true, opacity: 0.2 });
             const glow = new THREE.Mesh(glowGeom, glowMat);
             group.add(glow);
             group.glowMesh = glow;
@@ -1239,9 +1473,10 @@
             const group = new THREE.Group();
             const level = CONFIG.levels[state.currentLevel];
             
+            // BLACK tent for visibility
             const tentGeom = new THREE.ConeGeometry(2.5, 2.2, 4);
             const tentMat = new THREE.MeshStandardMaterial({ 
-                color: level.timeOfDay === 'night' ? 0x3a3a4a : 0xC19A6B, 
+                color: 0x1a1a1a, // Black color
                 roughness: 0.9,
                 side: THREE.DoubleSide
             });
@@ -1313,11 +1548,37 @@
                 group.add(light);
             }
             
+            // Palm trees
             [-14, 14].forEach(px => {
                 const palm = createPalmTree(px, 0);
                 palm.position.y = 0;
                 group.add(palm);
             });
+            
+            // Parked vehicles around station
+            const vehicleColors = [0xffffff, 0x4a4a4a, 0x8B4513, 0x1a3d5c, 0x5c1a1a];
+            
+            // Left side vehicles
+            const jeep1 = createOldJeep(vehicleColors[0]);
+            jeep1.position.set(-12, 0, -5);
+            jeep1.rotation.y = Math.PI / 6;
+            group.add(jeep1);
+            
+            const pickup1 = createPickupTruck(vehicleColors[1]);
+            pickup1.position.set(-13, 0, 5);
+            pickup1.rotation.y = -Math.PI / 8;
+            group.add(pickup1);
+            
+            // Right side vehicles
+            const jeep2 = createOldJeep(vehicleColors[2]);
+            jeep2.position.set(12, 0, -4);
+            jeep2.rotation.y = -Math.PI / 5;
+            group.add(jeep2);
+            
+            const truck1 = createSmallTruck(vehicleColors[3]);
+            truck1.position.set(14, 0, 6);
+            truck1.rotation.y = Math.PI / 4;
+            group.add(truck1);
             
             group.position.set(0, 0, z);
             return group;
@@ -1326,9 +1587,10 @@
         function createCamp(z) {
             const group = new THREE.Group();
             
+            // Main tent (BLACK)
             const mainTentGeom = new THREE.ConeGeometry(4.5, 3.5, 6);
             const mainTentMat = new THREE.MeshStandardMaterial({ 
-                color: 0x8B4513, 
+                color: 0x1a1a1a, // Black
                 roughness: 0.9,
                 side: THREE.DoubleSide
             });
@@ -1338,18 +1600,21 @@
             mainTent.castShadow = true;
             group.add(mainTent);
             
+            // Side tents (BLACK)
             [[-9, 4], [9, 3], [-7, -5], [7, -4]].forEach(([tx, tz]) => {
                 const tent = createTent(tx, tz);
                 tent.position.y = 0;
                 group.add(tent);
             });
             
+            // Palm trees
             [[-16, 0], [16, 0], [0, -10], [-11, 7], [11, 7]].forEach(([px, pz]) => {
                 const palm = createPalmTree(px, pz);
                 palm.position.y = 0;
                 group.add(palm);
             });
             
+            // Central bonfire
             const fireLight = new THREE.PointLight(0xff6600, 6, 30);
             fireLight.position.set(0, 1.5, 9);
             group.add(fireLight);
@@ -1360,6 +1625,7 @@
             fire.position.set(0, 0.75, 9);
             group.add(fire);
             
+            // Welcome arch
             const archGeom = new THREE.TorusGeometry(3.5, 0.25, 8, 16, Math.PI);
             const archMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
             const arch = new THREE.Mesh(archGeom, archMat);
@@ -1373,6 +1639,41 @@
                 pole.position.set(px, 1.75, 18);
                 group.add(pole);
             });
+            
+            // Parked vehicles around camp
+            const vehicleColors = [0xffffff, 0x4a4a4a, 0x8B4513, 0x1a3d5c, 0xd4b896, 0x2a4a2a];
+            
+            // Left side
+            const jeep1 = createOldJeep(vehicleColors[0]);
+            jeep1.position.set(-18, 0, -3);
+            jeep1.rotation.y = Math.PI / 4;
+            group.add(jeep1);
+            
+            const pickup1 = createPickupTruck(vehicleColors[4]);
+            pickup1.position.set(-20, 0, 5);
+            pickup1.rotation.y = Math.PI / 6;
+            group.add(pickup1);
+            
+            const truck1 = createSmallTruck(vehicleColors[1]);
+            truck1.position.set(-16, 0, 12);
+            truck1.rotation.y = -Math.PI / 8;
+            group.add(truck1);
+            
+            // Right side
+            const jeep2 = createOldJeep(vehicleColors[2]);
+            jeep2.position.set(18, 0, -2);
+            jeep2.rotation.y = -Math.PI / 3;
+            group.add(jeep2);
+            
+            const pickup2 = createPickupTruck(vehicleColors[3]);
+            pickup2.position.set(20, 0, 6);
+            pickup2.rotation.y = -Math.PI / 5;
+            group.add(pickup2);
+            
+            const jeep3 = createOldJeep(vehicleColors[5]);
+            jeep3.position.set(17, 0, 13);
+            jeep3.rotation.y = Math.PI / 7;
+            group.add(jeep3);
             
             group.position.set(0, 0, z);
             return group;
@@ -1440,7 +1741,6 @@
         
         // ============= LEVEL SETUP =============
         function setupLevel() {
-            // Clear existing objects
             terrain.forEach(t => {
                 scene.remove(t.surface);
                 scene.remove(t.base);
@@ -1463,11 +1763,9 @@
             
             const level = CONFIG.levels[state.currentLevel];
             
-            // Sky and fog
             scene.background = new THREE.Color(level.skyColors.top);
             scene.fog = new THREE.Fog(level.fogColor, level.fogNear, level.fogFar);
             
-            // Clear lights
             scene.children = scene.children.filter(c => !(c instanceof THREE.Light) || c.parent === vehicle);
             
             const ambientLight = new THREE.AmbientLight(0xffffff, level.timeOfDay === 'night' ? 0.15 : 0.5);
@@ -1477,11 +1775,7 @@
                 level.timeOfDay === 'night' ? 0x6666aa : 0xffffee,
                 level.sunIntensity
             );
-            sunLight.position.set(
-                level.timeOfDay === 'afternoon' ? -40 : 40,
-                60,
-                40
-            );
+            sunLight.position.set(level.timeOfDay === 'afternoon' ? -40 : 40, 60, 40);
             sunLight.castShadow = true;
             sunLight.shadow.mapSize.width = 1024;
             sunLight.shadow.mapSize.height = 1024;
@@ -1493,7 +1787,6 @@
             sunLight.shadow.camera.bottom = -60;
             scene.add(sunLight);
             
-            // Generate terrain
             const numChunks = Math.ceil((level.distance + 200) / TERRAIN_CHUNK_SIZE) + 3;
             for (let i = 0; i < numChunks; i++) {
                 const zPos = i * TERRAIN_CHUNK_SIZE - TERRAIN_CHUNK_SIZE;
@@ -1503,7 +1796,6 @@
                 scene.add(chunk.base);
             }
             
-            // Generate obstacles
             for (let z = 50; z < level.distance - 40; z += 18) {
                 if (Math.random() < level.obstacleFrequency) {
                     const obstacle = createObstacle(z);
@@ -1512,7 +1804,6 @@
                 }
             }
             
-            // Generate fuel cans (rare)
             for (let z = 80; z < level.distance - 60; z += 50) {
                 if (Math.random() < level.fuelCanFrequency) {
                     const fuelCan = createFuelCan(z);
@@ -1521,7 +1812,6 @@
                 }
             }
             
-            // Decorations
             for (let z = 100; z < level.distance - 150; z += 130) {
                 if (Math.random() > 0.55) {
                     const side = Math.random() > 0.5 ? 1 : -1;
@@ -1531,7 +1821,6 @@
                 }
             }
             
-            // Goal
             if (state.currentLevel === 2) {
                 goalMarker = createCamp(level.distance + 25);
             } else {
@@ -1539,15 +1828,12 @@
             }
             scene.add(goalMarker);
             
-            // Night features
             if (level.timeOfDay === 'night') {
                 const starField = createStars();
                 stars.push(starField);
                 scene.add(starField);
                 
-                vehicle.headlights.forEach(light => {
-                    light.intensity = 5;
-                });
+                vehicle.headlights.forEach(light => { light.intensity = 5; });
                 
                 const moonGeom = new THREE.SphereGeometry(10, 16, 16);
                 const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffee });
@@ -1560,33 +1846,29 @@
                 moonLight.position.copy(moon.position);
                 scene.add(moonLight);
             } else {
-                vehicle.headlights.forEach(light => {
-                    light.intensity = 0;
-                });
+                vehicle.headlights.forEach(light => { light.intensity = 0; });
             }
             
-            // Dust particles
             dustParticles = createDustParticles();
             vehicle.add(dustParticles);
             dustParticles.position.set(0, 0.3, -2.5);
             
-            // Mirage
             mirageOverlay.style.display = level.timeOfDay === 'night' ? 'none' : 'block';
             
-            // Reset vehicle cargo
+            // Reset cargo
             if (vehicle.cargo) {
                 vehicle.cargo.forEach(item => {
+                    if (item.userData.fallen && item.parent !== vehicle) {
+                        scene.remove(item);
+                        vehicle.add(item);
+                    }
                     item.position.copy(item.userData.originalPos);
                     item.rotation.set(0, 0, 0);
                     item.userData.velocity.set(0, 0, 0);
                     item.userData.fallen = false;
-                    if (!vehicle.children.includes(item)) {
-                        vehicle.add(item);
-                    }
                 });
             }
             
-            // Reset state
             state.fuel = 100;
             state.distance = 0;
             state.steering = 0;
@@ -1595,12 +1877,12 @@
             state.vehicleY = CONFIG.vehicle.groundOffset;
             state.isGrounded = true;
             state.lastCollisionTime = 0;
+            state.cameraRotating = false;
+            state.showNextButton = false;
             
-            // Reset vehicle
             vehicle.position.set(0, state.vehicleY, 0);
             vehicle.rotation.set(0, 0, 0);
             
-            // Update HUD
             levelName.textContent = level.name;
             updateHUD();
         }
@@ -1616,12 +1898,12 @@
         // ============= INPUT HANDLING =============
         function setupControls() {
             document.addEventListener('touchstart', (e) => {
-                if (!state.isPlaying) return;
+                if (!state.isPlaying || state.cameraRotating) return;
                 state.touchStartX = e.touches[0].clientX;
             }, { passive: false });
             
             document.addEventListener('touchmove', (e) => {
-                if (!state.isPlaying) return;
+                if (!state.isPlaying || state.cameraRotating) return;
                 e.preventDefault();
                 
                 const touchX = e.touches[0].clientX;
@@ -1637,7 +1919,7 @@
             });
             
             document.addEventListener('keydown', (e) => {
-                if (!state.isPlaying) return;
+                if (!state.isPlaying || state.cameraRotating) return;
                 if (e.key === 'ArrowLeft' || e.key === 'a') {
                     state.targetSteering = CONFIG.vehicle.maxSteerAngle;
                 } else if (e.key === 'ArrowRight' || e.key === 'd') {
@@ -1657,7 +1939,6 @@
             const vehiclePos = vehicle.position;
             const now = Date.now();
             
-            // Check obstacles
             for (let i = obstacles.length - 1; i >= 0; i--) {
                 const obstacle = obstacles[i];
                 const dx = vehiclePos.x - obstacle.position.x;
@@ -1669,13 +1950,11 @@
                         state.fuel -= 8;
                         audio.playCrash();
                         
-                        // Bounce up
                         if (state.isGrounded) {
                             state.vehicleVelocityY = 6;
                             state.isGrounded = false;
                         }
                         
-                        // Shake cargo
                         if (vehicle.cargo) {
                             vehicle.cargo.forEach(item => {
                                 if (!item.userData.fallen) {
@@ -1699,7 +1978,6 @@
                 }
             }
             
-            // Check fuel cans
             for (let i = fuelCans.length - 1; i >= 0; i--) {
                 const fuelCan = fuelCans[i];
                 const dx = vehiclePos.x - fuelCan.position.x;
@@ -1710,11 +1988,8 @@
                     state.fuel = Math.min(100, state.fuel + 10);
                     audio.playFuelPickup();
                     
-                    // Show notification
                     fuelNotification.style.display = 'block';
-                    setTimeout(() => {
-                        fuelNotification.style.display = 'none';
-                    }, 1500);
+                    setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
                     
                     scene.remove(fuelCan);
                     fuelCans.splice(i, 1);
@@ -1726,39 +2001,55 @@
         
         // ============= UPDATE CARGO =============
         function updateCargo(delta) {
-            if (!vehicle.cargo) return;
+            if (!vehicle.cargo || !vehicle.cargoBounds) return;
+            
+            const bounds = vehicle.cargoBounds;
             
             vehicle.cargo.forEach(item => {
                 if (item.userData.fallen) {
-                    // Already fallen, update in world space
                     item.userData.velocity.y -= 15 * delta;
                     item.position.x += item.userData.velocity.x * delta;
                     item.position.y += item.userData.velocity.y * delta;
                     item.position.z += item.userData.velocity.z * delta;
                     
-                    // Ground collision
                     const groundHeight = getTerrainHeight(item.position.x, item.position.z);
                     if (item.position.y < groundHeight + 0.2) {
                         item.position.y = groundHeight + 0.2;
                         item.userData.velocity.multiplyScalar(0.3);
                     }
                     
-                    // Rotation
                     item.rotation.x += item.userData.velocity.z * delta;
                     item.rotation.z += item.userData.velocity.x * delta;
                     
                 } else if (item.userData.velocity.lengthSq() > 0.1) {
-                    // Moving but still in vehicle
                     item.userData.velocity.y -= 20 * delta;
                     
-                    item.position.x += item.userData.velocity.x * delta;
-                    item.position.y += item.userData.velocity.y * delta;
-                    item.position.z += item.userData.velocity.z * delta;
+                    const newX = item.position.x + item.userData.velocity.x * delta;
+                    const newY = item.position.y + item.userData.velocity.y * delta;
+                    const newZ = item.position.z + item.userData.velocity.z * delta;
                     
-                    // Check if fell off
-                    const localPos = item.position;
-                    if (localPos.x < -1.1 || localPos.x > 1.1 || localPos.z < -2.7 || localPos.y > 2.5) {
-                        // Convert to world position
+                    // Invisible barrier - bounce back before reaching edge
+                    const margin = 0.15; // Buffer before actual edge
+                    
+                    if (newX < bounds.minX + margin) {
+                        item.userData.velocity.x = Math.abs(item.userData.velocity.x) * 0.5;
+                    } else if (newX > bounds.maxX - margin) {
+                        item.userData.velocity.x = -Math.abs(item.userData.velocity.x) * 0.5;
+                    } else {
+                        item.position.x = newX;
+                    }
+                    
+                    if (newZ < bounds.minZ + margin) {
+                        item.userData.velocity.z = Math.abs(item.userData.velocity.z) * 0.5;
+                    } else if (newZ > bounds.maxZ - margin) {
+                        item.userData.velocity.z = -Math.abs(item.userData.velocity.z) * 0.5;
+                    } else {
+                        item.position.z = newZ;
+                    }
+                    
+                    // Check if should fall off (only if velocity is very high)
+                    const totalVelocity = item.userData.velocity.length();
+                    if (totalVelocity > 8 && (newY > 2.2 || newX < bounds.minX - 0.3 || newX > bounds.maxX + 0.3)) {
                         const worldPos = new THREE.Vector3();
                         item.getWorldPosition(worldPos);
                         
@@ -1766,28 +2057,18 @@
                         scene.add(item);
                         item.position.copy(worldPos);
                         item.userData.fallen = true;
-                        
-                        // Add forward momentum
                         item.userData.velocity.z += CONFIG.vehicle.speed * 0.3;
-                    }
-                    
-                    // Damping
-                    item.userData.velocity.multiplyScalar(0.95);
-                    
-                    // Bounds check within truck bed
-                    if (!item.userData.fallen) {
-                        item.position.x = Math.max(-0.8, Math.min(0.8, item.position.x));
-                        item.position.z = Math.max(-2.4, Math.min(-0.4, item.position.z));
-                        
-                        if (item.position.y < item.userData.originalPos.y) {
-                            item.position.y = item.userData.originalPos.y;
+                    } else {
+                        item.position.y = Math.max(newY, item.userData.originalPos.y);
+                        if (newY <= item.userData.originalPos.y) {
                             item.userData.velocity.y = 0;
                         }
                     }
                     
-                    // Small rotation
-                    item.rotation.x = item.userData.velocity.z * 0.1;
-                    item.rotation.z = -item.userData.velocity.x * 0.1;
+                    item.userData.velocity.multiplyScalar(0.95);
+                    
+                    item.rotation.x = item.userData.velocity.z * 0.08;
+                    item.rotation.z = -item.userData.velocity.x * 0.08;
                 }
             });
         }
@@ -1823,7 +2104,6 @@
                 positions[idx + 1] += velocities[i].y * delta * 60;
                 positions[idx + 2] += velocities[i].z * delta * 60;
                 
-                // Reset if too far
                 if (positions[idx + 2] < -10 || positions[idx + 1] > 2.5) {
                     positions[idx] = (Math.random() - 0.5) * 5;
                     positions[idx + 1] = Math.random() * 0.3;
@@ -1838,16 +2118,84 @@
             dustParticles.geometry.attributes.position.needsUpdate = true;
         }
         
+        // ============= CAMERA ROTATION =============
+        function updateCameraRotation(delta) {
+            if (!state.cameraRotating) return;
+            
+            const elapsed = (Date.now() - state.cameraRotationStart) / 1000;
+            const duration = CONFIG.camera.rotationDuration;
+            const progress = Math.min(elapsed / duration, 1);
+            
+            // Full 360 degree rotation
+            const angle = progress * Math.PI * 2;
+            const radius = 18;
+            const height = vehicle.position.y + 6;
+            
+            camera.position.x = vehicle.position.x + Math.sin(angle) * radius;
+            camera.position.z = vehicle.position.z + Math.cos(angle) * radius;
+            camera.position.y = height + Math.sin(progress * Math.PI) * 3;
+            
+            camera.lookAt(vehicle.position.x, vehicle.position.y + 1.5, vehicle.position.z);
+            
+            if (progress >= 1) {
+                state.cameraRotating = false;
+                
+                if (state.cameraRotationType === 'levelComplete') {
+                    showLevelCompleteScreen();
+                } else if (state.cameraRotationType === 'win') {
+                    showWinScreen();
+                } else if (state.cameraRotationType === 'lose') {
+                    showLoseScreen();
+                }
+            }
+        }
+        
+        function showLevelCompleteScreen() {
+            const level = CONFIG.levels[state.currentLevel];
+            completeTitle.textContent = '🎉 أحسنت!';
+            completeSubtitle.textContent = `وصلت إلى ${level.targetName}!`;
+            levelCompleteScreen.style.display = 'flex';
+        }
+        
+        function showWinScreen() {
+            winScreen.style.display = 'flex';
+        }
+        
+        function showLoseScreen() {
+            endScreen.style.display = 'flex';
+        }
+        
         // ============= GAME LOOP =============
         function gameLoop() {
             requestAnimationFrame(gameLoop);
+            
+            const delta = Math.min(clock.getDelta(), 0.05);
+            
+            // Handle camera rotation animation
+            if (state.cameraRotating) {
+                updateCameraRotation(delta);
+                
+                // Animate fuel cans even during rotation
+                fuelCans.forEach(can => {
+                    can.rotation.y += delta * 2;
+                    can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + Math.sin(Date.now() * 0.003) * 0.15;
+                });
+                
+                // Stars twinkle
+                const level = CONFIG.levels[state.currentLevel];
+                if (level.timeOfDay === 'night' && stars[0]) {
+                    stars[0].material.opacity = 0.6 + Math.sin(Date.now() * 0.003) * 0.3;
+                }
+                
+                renderer.render(scene, camera);
+                return;
+            }
             
             if (!state.isPlaying || state.isPaused) {
                 renderer.render(scene, camera);
                 return;
             }
             
-            const delta = Math.min(clock.getDelta(), 0.05);
             const level = CONFIG.levels[state.currentLevel];
             
             // Steering
@@ -1900,15 +2248,11 @@
                 wheel.children[1].rotation.x += speed * delta * 2;
             });
             
-            // Camera
+            // Camera follow
             camera.position.x = vehicle.position.x * 0.3;
             camera.position.y = vehicle.position.y + 7;
             camera.position.z = vehicle.position.z - 14;
-            camera.lookAt(
-                vehicle.position.x * 0.5,
-                vehicle.position.y + 2,
-                vehicle.position.z + 18
-            );
+            camera.lookAt(vehicle.position.x * 0.5, vehicle.position.y + 2, vehicle.position.z + 18);
             
             // Update systems
             updateDustParticles(delta);
@@ -1940,8 +2284,8 @@
             // HUD
             updateHUD();
             
-            // Win condition (8 meters before goal)
-            if (state.distance >= level.distance - 8) {
+            // Win condition (3 meters before goal)
+            if (state.distance >= level.distance - 3) {
                 completeLevel();
             }
             
@@ -1956,42 +2300,46 @@
         // ============= LEVEL COMPLETION =============
         function completeLevel() {
             state.isPaused = true;
-            audio.playLevelComplete();
+            audio.stopEngine();
+            audio.playCelebration();
+            hud.style.display = 'none';
+            
+            // Start camera rotation
+            state.cameraRotating = true;
+            state.cameraRotationStart = Date.now();
             
             if (state.currentLevel < 2) {
-                const nextLevel = CONFIG.levels[state.currentLevel + 1];
-                transitionText.textContent = nextLevel.name;
-                transitionSubtitle.textContent = `الهدف: الوصول إلى ${nextLevel.targetName}`;
-                levelTransition.style.display = 'flex';
-                
-                setTimeout(() => {
-                    levelTransition.style.display = 'none';
-                    state.currentLevel++;
-                    setupLevel();
-                    state.isPaused = false;
-                }, 3000);
+                state.cameraRotationType = 'levelComplete';
             } else {
-                gameOver(true);
+                state.cameraRotationType = 'win';
             }
         }
         
         // ============= GAME OVER =============
         function gameOver(won) {
-            state.isPlaying = false;
-            state.gameOver = true;
+            state.isPaused = true;
             audio.stopEngine();
-            
-            if (won) {
-                endTitle.textContent = '🎉 مبروك!';
-                endMessage.textContent = 'وصلت للمخيم الصحراوي بسلام! أنت ناجٍ حقيقي!';
-            } else {
-                endTitle.textContent = '⛽ نفذ الوقود!';
-                endMessage.textContent = 'لم تستطع الوصول في الوقت المناسب. حاول مرة أخرى!';
-            }
-            
             hud.style.display = 'none';
-            touchHint.style.display = 'none';
-            endScreen.style.display = 'flex';
+            
+            if (!won) {
+                audio.playDefeat();
+                state.cameraRotating = true;
+                state.cameraRotationStart = Date.now();
+                state.cameraRotationType = 'lose';
+            }
+        }
+        
+        // ============= GO TO NEXT LEVEL =============
+        function goToNextLevel() {
+            levelCompleteScreen.style.display = 'none';
+            state.currentLevel++;
+            state.isPlaying = true;
+            state.isPaused = false;
+            state.cameraRotating = false;
+            
+            setupLevel();
+            hud.style.display = 'flex';
+            audio.startEngine();
         }
         
         // ============= START GAME =============
@@ -2004,25 +2352,28 @@
             state.isPlaying = true;
             state.gameOver = false;
             state.currentLevel = 0;
+            state.isPaused = false;
+            state.cameraRotating = false;
             
             setupLevel();
             audio.startEngine();
             clock.start();
             
-            setTimeout(() => {
-                touchHint.style.display = 'none';
-            }, 5000);
+            setTimeout(() => { touchHint.style.display = 'none'; }, 5000);
         }
         
         // ============= RESTART GAME =============
         function restartGame() {
             endScreen.style.display = 'none';
+            winScreen.style.display = 'none';
+            levelCompleteScreen.style.display = 'none';
+            
             state.currentLevel = 0;
             state.isPlaying = true;
             state.isPaused = false;
             state.gameOver = false;
+            state.cameraRotating = false;
             
-            // Reset clock
             clock.stop();
             clock.start();
             
@@ -2033,7 +2384,9 @@
         
         // ============= EVENT LISTENERS =============
         startBtn.addEventListener('click', startGame);
+        nextLevelBtn.addEventListener('click', goToNextLevel);
         retryBtn.addEventListener('click', restartGame);
+        playAgainBtn.addEventListener('click', restartGame);
         
         // ============= INITIALIZE =============
         initBackgroundCanvas();
