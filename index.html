@@ -1,0 +1,2045 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>النجاة في الصحراء</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a0f00;
+            touch-action: none;
+        }
+        
+        #gameCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        /* Start Screen */
+        #startScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #1a0f00 0%, #3d2810 50%, #8b5a2b 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            overflow: hidden;
+        }
+        
+        #startScreen canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 0;
+        }
+        
+        .start-content {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            color: #fff;
+        }
+        
+        .game-title {
+            font-size: clamp(2rem, 8vw, 4rem);
+            font-weight: bold;
+            text-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 40px rgba(255,180,100,0.3);
+            margin-bottom: 20px;
+            animation: titleGlow 2s ease-in-out infinite alternate;
+        }
+        
+        @keyframes titleGlow {
+            from { text-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 40px rgba(255,180,100,0.3); }
+            to { text-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 60px rgba(255,200,120,0.5); }
+        }
+        
+        .subtitle {
+            font-size: clamp(0.9rem, 3vw, 1.3rem);
+            color: #d4a574;
+            margin-bottom: 40px;
+        }
+        
+        .start-btn {
+            background: linear-gradient(135deg, #d4a574 0%, #8b5a2b 100%);
+            border: none;
+            padding: 15px 50px;
+            font-size: clamp(1.2rem, 4vw, 1.5rem);
+            color: #fff;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+        
+        .start-btn:hover, .start-btn:active {
+            transform: scale(1.05);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.4);
+        }
+        
+        .credits {
+            position: absolute;
+            bottom: 20px;
+            text-align: center;
+            color: #a08060;
+            font-size: clamp(0.7rem, 2vw, 0.9rem);
+            z-index: 1;
+        }
+        
+        .credits a {
+            color: #d4a574;
+            text-decoration: none;
+        }
+        
+        /* HUD */
+        #hud {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 15px;
+            display: none;
+            justify-content: space-between;
+            align-items: flex-start;
+            z-index: 100;
+            pointer-events: none;
+        }
+        
+        .hud-panel {
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 12px 18px;
+            color: #fff;
+        }
+        
+        .fuel-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .fuel-icon {
+            font-size: 1.5rem;
+        }
+        
+        .fuel-bar {
+            width: 120px;
+            height: 20px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        .fuel-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff4444, #ffaa00, #44ff44);
+            border-radius: 10px;
+            transition: width 0.3s ease;
+        }
+        
+        .level-info {
+            text-align: left;
+        }
+        
+        .level-name {
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+        
+        .distance {
+            font-size: 0.9rem;
+            color: #aaa;
+        }
+        
+        /* Touch Controls Hint */
+        #touchHint {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: rgba(255,255,255,0.6);
+            font-size: 1rem;
+            text-align: center;
+            z-index: 100;
+            pointer-events: none;
+            animation: fadeInOut 3s ease-in-out infinite;
+        }
+        
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.8; }
+        }
+        
+        /* Fuel Pickup Notification */
+        #fuelNotification {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 200, 0, 0.8);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 10px;
+            font-size: 1.3rem;
+            font-weight: bold;
+            display: none;
+            z-index: 200;
+            animation: popIn 0.3s ease;
+        }
+        
+        @keyframes popIn {
+            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
+        
+        /* Level Transition */
+        #levelTransition {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 500;
+            color: #fff;
+        }
+        
+        .transition-text {
+            font-size: clamp(1.5rem, 5vw, 2.5rem);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .transition-subtitle {
+            font-size: clamp(1rem, 3vw, 1.3rem);
+            color: #d4a574;
+        }
+        
+        /* Game Over / Win Screen */
+        #endScreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            z-index: 600;
+            color: #fff;
+        }
+        
+        .end-title {
+            font-size: clamp(2rem, 7vw, 3.5rem);
+            margin-bottom: 20px;
+        }
+        
+        .end-message {
+            font-size: clamp(1rem, 3vw, 1.3rem);
+            color: #aaa;
+            margin-bottom: 30px;
+            text-align: center;
+            padding: 0 20px;
+        }
+        
+        .retry-btn {
+            background: linear-gradient(135deg, #d4a574 0%, #8b5a2b 100%);
+            border: none;
+            padding: 12px 40px;
+            font-size: 1.2rem;
+            color: #fff;
+            border-radius: 50px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        
+        /* Mirage Effect */
+        #mirageOverlay {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 30%;
+            background: linear-gradient(to top, rgba(255,200,150,0.1), transparent);
+            pointer-events: none;
+            z-index: 50;
+            animation: mirageWave 3s ease-in-out infinite;
+        }
+        
+        @keyframes mirageWave {
+            0%, 100% { opacity: 0.3; transform: scaleY(1); }
+            50% { opacity: 0.5; transform: scaleY(1.05); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Start Screen -->
+    <div id="startScreen">
+        <canvas id="bgCanvas"></canvas>
+        <div class="start-content">
+            <h1 class="game-title">🏜️ النجاة في الصحراء</h1>
+            <p class="subtitle">اجتز الصحراء القاسية وصل للمخيم قبل نفاذ الوقود</p>
+            <button class="start-btn" id="startBtn">🚙 ابدأ الرحلة</button>
+        </div>
+        <div class="credits">
+            <p>تطوير: عبدالكريم العبود | <a href="mailto:abo.saleh.g@gmail.com">abo.saleh.g@gmail.com</a></p>
+            <p>© 2024 [Survival Skills] - All Rights Reserved</p>
+        </div>
+    </div>
+    
+    <!-- Game Canvas -->
+    <canvas id="gameCanvas"></canvas>
+    
+    <!-- HUD -->
+    <div id="hud">
+        <div class="hud-panel fuel-container">
+            <span class="fuel-icon">⛽</span>
+            <div class="fuel-bar">
+                <div class="fuel-fill" id="fuelFill"></div>
+            </div>
+        </div>
+        <div class="hud-panel level-info">
+            <div class="level-name" id="levelName">المرحلة الأولى</div>
+            <div class="distance" id="distanceText">المسافة: 0 م</div>
+        </div>
+    </div>
+    
+    <!-- Touch Hint -->
+    <div id="touchHint">👆 اسحب يميناً ويساراً للتحكم</div>
+    
+    <!-- Fuel Notification -->
+    <div id="fuelNotification">⛽ +10% وقود!</div>
+    
+    <!-- Mirage Overlay -->
+    <div id="mirageOverlay"></div>
+    
+    <!-- Level Transition -->
+    <div id="levelTransition">
+        <div class="transition-text" id="transitionText">المرحلة الثانية</div>
+        <div class="transition-subtitle" id="transitionSubtitle">استعد للعصر الحار...</div>
+    </div>
+    
+    <!-- End Screen -->
+    <div id="endScreen">
+        <div class="end-title" id="endTitle">🎉 مبروك!</div>
+        <div class="end-message" id="endMessage">وصلت للمخيم بسلام!</div>
+        <button class="retry-btn" id="retryBtn">🔄 العب مجدداً</button>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+    
+    <script type="module">
+        import * as THREE from 'three';
+        
+        // ============= GAME CONFIGURATION =============
+        const CONFIG = {
+            levels: [
+                {
+                    name: 'المرحلة الأولى - الصباح',
+                    timeOfDay: 'morning',
+                    distance: 800,
+                    fuelConsumption: 0.012,
+                    obstacleFrequency: 0.22,
+                    fuelCanFrequency: 0.08,
+                    duneHeight: 1.2,
+                    targetName: 'محطة البنزين',
+                    skyColors: { top: 0x87CEEB, bottom: 0xFFE4B5 },
+                    fogColor: 0xD4C4A8,
+                    fogNear: 15,
+                    fogFar: 80,
+                    sunIntensity: 1.2
+                },
+                {
+                    name: 'المرحلة الثانية - العصر',
+                    timeOfDay: 'afternoon',
+                    distance: 1000,
+                    fuelConsumption: 0.015,
+                    obstacleFrequency: 0.28,
+                    fuelCanFrequency: 0.07,
+                    duneHeight: 1.5,
+                    targetName: 'محطة البنزين',
+                    skyColors: { top: 0xFF8C00, bottom: 0xFFD700 },
+                    fogColor: 0xC9A86C,
+                    fogNear: 12,
+                    fogFar: 70,
+                    sunIntensity: 1.5
+                },
+                {
+                    name: 'المرحلة الثالثة - الليل',
+                    timeOfDay: 'night',
+                    distance: 900,
+                    fuelConsumption: 0.014,
+                    obstacleFrequency: 0.25,
+                    fuelCanFrequency: 0.06,
+                    duneHeight: 1.3,
+                    targetName: 'المخيم الصحراوي',
+                    skyColors: { top: 0x0a0a20, bottom: 0x1a1a3a },
+                    fogColor: 0x151525,
+                    fogNear: 10,
+                    fogFar: 50,
+                    sunIntensity: 0.1
+                }
+            ],
+            vehicle: {
+                speed: 18,
+                steeringSensitivity: 0.003,
+                maxSteerAngle: 0.8,
+                steeringDamping: 0.92,
+                bodyTiltFactor: 0.15,
+                gravity: 30,
+                groundOffset: 0.6,
+                terrainFollowSpeed: 0.2
+            }
+        };
+        
+        // ============= AUDIO SYSTEM =============
+        class AudioSystem {
+            constructor() {
+                this.ctx = null;
+                this.masterGain = null;
+                this.engineOsc = null;
+                this.engineGain = null;
+                this.windGain = null;
+                this.initialized = false;
+            }
+            
+            init() {
+                if (this.initialized) return;
+                try {
+                    this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+                    this.masterGain = this.ctx.createGain();
+                    this.masterGain.gain.value = 0.3;
+                    this.masterGain.connect(this.ctx.destination);
+                    
+                    this.setupEngine();
+                    this.setupWind();
+                    
+                    this.initialized = true;
+                } catch (e) {
+                    console.log('Audio not available');
+                }
+            }
+            
+            setupEngine() {
+                this.engineOsc = this.ctx.createOscillator();
+                this.engineOsc.type = 'sawtooth';
+                this.engineOsc.frequency.value = 80;
+                this.engineGain = this.ctx.createGain();
+                this.engineGain.gain.value = 0;
+                
+                const engineFilter = this.ctx.createBiquadFilter();
+                engineFilter.type = 'lowpass';
+                engineFilter.frequency.value = 200;
+                
+                this.engineOsc.connect(engineFilter);
+                engineFilter.connect(this.engineGain);
+                this.engineGain.connect(this.masterGain);
+                this.engineOsc.start();
+            }
+            
+            setupWind() {
+                const windBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 2, this.ctx.sampleRate);
+                const windData = windBuffer.getChannelData(0);
+                for (let i = 0; i < windData.length; i++) {
+                    windData[i] = Math.random() * 2 - 1;
+                }
+                
+                this.windSource = this.ctx.createBufferSource();
+                this.windSource.buffer = windBuffer;
+                this.windSource.loop = true;
+                
+                const windFilter = this.ctx.createBiquadFilter();
+                windFilter.type = 'bandpass';
+                windFilter.frequency.value = 800;
+                windFilter.Q.value = 0.5;
+                
+                this.windGain = this.ctx.createGain();
+                this.windGain.gain.value = 0;
+                
+                this.windSource.connect(windFilter);
+                windFilter.connect(this.windGain);
+                this.windGain.connect(this.masterGain);
+                this.windSource.start();
+            }
+            
+            startEngine() {
+                if (!this.initialized) return;
+                this.engineGain.gain.setTargetAtTime(0.15, this.ctx.currentTime, 0.5);
+                this.windGain.gain.setTargetAtTime(0.08, this.ctx.currentTime, 0.5);
+            }
+            
+            stopEngine() {
+                if (!this.initialized) return;
+                this.engineGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.3);
+                this.windGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.3);
+            }
+            
+            updateEngine(speed, steering) {
+                if (!this.initialized) return;
+                const freq = 60 + Math.abs(speed) * 2 + Math.abs(steering) * 20;
+                this.engineOsc.frequency.setTargetAtTime(freq, this.ctx.currentTime, 0.1);
+            }
+            
+            playCrash() {
+                if (!this.initialized) return;
+                
+                // Impact noise
+                const bufferSize = this.ctx.sampleRate * 0.4;
+                const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                const data = buffer.getChannelData(0);
+                
+                for (let i = 0; i < bufferSize; i++) {
+                    const decay = Math.pow(1 - (i / bufferSize), 2);
+                    data[i] = (Math.random() * 2 - 1) * decay;
+                }
+                
+                const noiseSource = this.ctx.createBufferSource();
+                noiseSource.buffer = buffer;
+                
+                const filter = this.ctx.createBiquadFilter();
+                filter.type = 'lowpass';
+                filter.frequency.value = 400;
+                
+                const gain = this.ctx.createGain();
+                gain.gain.value = 0.6;
+                
+                noiseSource.connect(filter);
+                filter.connect(gain);
+                gain.connect(this.masterGain);
+                noiseSource.start();
+                
+                // Metal clang
+                const osc = this.ctx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = 120;
+                
+                const oscGain = this.ctx.createGain();
+                oscGain.gain.value = 0.4;
+                oscGain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.3);
+                
+                osc.connect(oscGain);
+                oscGain.connect(this.masterGain);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 0.35);
+            }
+            
+            playFuelPickup() {
+                if (!this.initialized) return;
+                
+                // Pleasant chime sound
+                const frequencies = [523, 659, 784]; // C5, E5, G5
+                
+                frequencies.forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    
+                    const gain = this.ctx.createGain();
+                    gain.gain.value = 0;
+                    gain.gain.setTargetAtTime(0.2, this.ctx.currentTime + i * 0.08, 0.01);
+                    gain.gain.setTargetAtTime(0, this.ctx.currentTime + i * 0.08 + 0.2, 0.1);
+                    
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(this.ctx.currentTime + i * 0.08);
+                    osc.stop(this.ctx.currentTime + i * 0.08 + 0.4);
+                });
+            }
+            
+            playLevelComplete() {
+                if (!this.initialized) return;
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 440;
+                gain.gain.value = 0.2;
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start();
+                osc.frequency.setTargetAtTime(880, this.ctx.currentTime, 0.1);
+                gain.gain.setTargetAtTime(0.01, this.ctx.currentTime, 0.3);
+                osc.stop(this.ctx.currentTime + 0.4);
+            }
+        }
+        
+        // ============= GAME STATE =============
+        const state = {
+            currentLevel: 0,
+            fuel: 100,
+            distance: 0,
+            isPlaying: false,
+            isPaused: false,
+            steering: 0,
+            targetSteering: 0,
+            touchStartX: 0,
+            gameOver: false,
+            vehicleVelocityY: 0,
+            vehicleY: 0,
+            isGrounded: true,
+            cargoItems: [],
+            lastCollisionTime: 0
+        };
+        
+        // ============= THREE.JS SETUP =============
+        let scene, camera, renderer, vehicle, clock;
+        let terrain = [];
+        let obstacles = [];
+        let fuelCans = [];
+        let decorations = [];
+        let stars = [];
+        let dustParticles;
+        let goalMarker;
+        const audio = new AudioSystem();
+        
+        // Terrain constants
+        const TERRAIN_CHUNK_SIZE = 50;
+        const TERRAIN_RESOLUTION = 40;
+        
+        // DOM Elements
+        const startScreen = document.getElementById('startScreen');
+        const startBtn = document.getElementById('startBtn');
+        const hud = document.getElementById('hud');
+        const fuelFill = document.getElementById('fuelFill');
+        const levelName = document.getElementById('levelName');
+        const distanceText = document.getElementById('distanceText');
+        const touchHint = document.getElementById('touchHint');
+        const fuelNotification = document.getElementById('fuelNotification');
+        const levelTransition = document.getElementById('levelTransition');
+        const transitionText = document.getElementById('transitionText');
+        const transitionSubtitle = document.getElementById('transitionSubtitle');
+        const endScreen = document.getElementById('endScreen');
+        const endTitle = document.getElementById('endTitle');
+        const endMessage = document.getElementById('endMessage');
+        const retryBtn = document.getElementById('retryBtn');
+        const mirageOverlay = document.getElementById('mirageOverlay');
+        
+        // ============= BACKGROUND ANIMATION =============
+        function initBackgroundCanvas() {
+            const canvas = document.getElementById('bgCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            function resize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            }
+            resize();
+            window.addEventListener('resize', resize);
+            
+            const dunes = [];
+            for (let i = 0; i < 5; i++) {
+                dunes.push({
+                    y: canvas.height * (0.5 + i * 0.1),
+                    amplitude: 30 + i * 15,
+                    frequency: 0.002 - i * 0.0003,
+                    speed: 0.0002 + i * 0.0001,
+                    color: `rgba(${139 - i * 15}, ${90 - i * 10}, ${43 - i * 5}, ${0.3 + i * 0.15})`
+                });
+            }
+            
+            let time = 0;
+            function animate() {
+                if (!startScreen.style.display || startScreen.style.display !== 'none') {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    dunes.forEach(dune => {
+                        ctx.beginPath();
+                        ctx.moveTo(0, canvas.height);
+                        for (let x = 0; x <= canvas.width; x += 5) {
+                            const y = dune.y + Math.sin(x * dune.frequency + time * dune.speed * 1000) * dune.amplitude;
+                            ctx.lineTo(x, y);
+                        }
+                        ctx.lineTo(canvas.width, canvas.height);
+                        ctx.closePath();
+                        ctx.fillStyle = dune.color;
+                        ctx.fill();
+                    });
+                    
+                    time += 0.016;
+                    requestAnimationFrame(animate);
+                }
+            }
+            animate();
+        }
+        
+        // ============= THREE.JS INITIALIZATION =============
+        function initThreeJS() {
+            scene = new THREE.Scene();
+            
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 8, -15);
+            camera.lookAt(0, 2, 10);
+            
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: document.getElementById('gameCanvas'),
+                antialias: true,
+                alpha: false
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            clock = new THREE.Clock();
+            
+            window.addEventListener('resize', onResize);
+        }
+        
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // ============= TOYOTA LAND CRUISER 70 PICKUP =============
+        function createVehicle() {
+            const group = new THREE.Group();
+            
+            // Colors
+            const bodyColor = 0xD4B896; // Beige sandy
+            const darkColor = 0x1a1a1a;
+            const chromeColor = 0xcccccc;
+            const glassColor = 0x87CEEB;
+            
+            // === CHASSIS / FRAME ===
+            const chassisGeom = new THREE.BoxGeometry(2.0, 0.25, 5.5);
+            const chassisMat = new THREE.MeshStandardMaterial({ color: darkColor, roughness: 0.8 });
+            const chassis = new THREE.Mesh(chassisGeom, chassisMat);
+            chassis.position.y = 0.4;
+            group.add(chassis);
+            
+            // === FRONT SECTION (Engine Hood) ===
+            const hoodGeom = new THREE.BoxGeometry(2.0, 0.6, 1.8);
+            const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.6, metalness: 0.1 });
+            const hood = new THREE.Mesh(hoodGeom, bodyMat);
+            hood.position.set(0, 1.0, 2.0);
+            hood.castShadow = true;
+            group.add(hood);
+            
+            // Hood lines (details)
+            const hoodLineGeom = new THREE.BoxGeometry(0.05, 0.02, 1.6);
+            const hoodLineMat = new THREE.MeshStandardMaterial({ color: 0xaaa080 });
+            [-0.5, 0.5].forEach(x => {
+                const line = new THREE.Mesh(hoodLineGeom, hoodLineMat);
+                line.position.set(x, 1.32, 2.0);
+                group.add(line);
+            });
+            
+            // === GRILLE ===
+            const grilleGeom = new THREE.BoxGeometry(1.6, 0.5, 0.1);
+            const grilleMat = new THREE.MeshStandardMaterial({ color: chromeColor, metalness: 0.8, roughness: 0.3 });
+            const grille = new THREE.Mesh(grilleGeom, grilleMat);
+            grille.position.set(0, 0.95, 2.95);
+            group.add(grille);
+            
+            // Grille bars
+            for (let i = -0.6; i <= 0.6; i += 0.15) {
+                const barGeom = new THREE.BoxGeometry(0.03, 0.4, 0.05);
+                const bar = new THREE.Mesh(barGeom, grilleMat);
+                bar.position.set(i, 0.95, 2.98);
+                group.add(bar);
+            }
+            
+            // === BULL BAR (Front Protection) ===
+            const bullBarMat = new THREE.MeshStandardMaterial({ color: darkColor, roughness: 0.7 });
+            
+            // Main horizontal bar
+            const mainBarGeom = new THREE.CylinderGeometry(0.06, 0.06, 2.2, 8);
+            const mainBar = new THREE.Mesh(mainBarGeom, bullBarMat);
+            mainBar.rotation.z = Math.PI / 2;
+            mainBar.position.set(0, 0.8, 3.15);
+            group.add(mainBar);
+            
+            // Vertical supports
+            [-0.9, 0.9].forEach(x => {
+                const supportGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.5, 8);
+                const support = new THREE.Mesh(supportGeom, bullBarMat);
+                support.position.set(x, 0.6, 3.1);
+                group.add(support);
+            });
+            
+            // === CABIN ===
+            // Main cabin body
+            const cabinGeom = new THREE.BoxGeometry(2.0, 1.1, 1.6);
+            const cabin = new THREE.Mesh(cabinGeom, bodyMat);
+            cabin.position.set(0, 1.65, 0.5);
+            cabin.castShadow = true;
+            group.add(cabin);
+            
+            // Cabin roof
+            const roofGeom = new THREE.BoxGeometry(1.9, 0.15, 1.5);
+            const roof = new THREE.Mesh(roofGeom, bodyMat);
+            roof.position.set(0, 2.28, 0.5);
+            roof.castShadow = true;
+            group.add(roof);
+            
+            // === WINDOWS ===
+            const windowMat = new THREE.MeshStandardMaterial({ 
+                color: glassColor, 
+                roughness: 0.1, 
+                metalness: 0.8,
+                transparent: true,
+                opacity: 0.7
+            });
+            
+            // Front windshield (angled)
+            const windshieldGeom = new THREE.BoxGeometry(1.6, 0.7, 0.08);
+            const windshield = new THREE.Mesh(windshieldGeom, windowMat);
+            windshield.position.set(0, 1.75, 1.35);
+            windshield.rotation.x = -0.15;
+            group.add(windshield);
+            
+            // Side windows
+            const sideWindowGeom = new THREE.BoxGeometry(0.08, 0.5, 0.8);
+            [-1.0, 1.0].forEach(x => {
+                const sideWindow = new THREE.Mesh(sideWindowGeom, windowMat);
+                sideWindow.position.set(x, 1.75, 0.5);
+                group.add(sideWindow);
+            });
+            
+            // Rear window
+            const rearWindowGeom = new THREE.BoxGeometry(1.4, 0.45, 0.08);
+            const rearWindow = new THREE.Mesh(rearWindowGeom, windowMat);
+            rearWindow.position.set(0, 1.75, -0.28);
+            group.add(rearWindow);
+            
+            // === DOORS (visible lines) ===
+            const doorLineMat = new THREE.MeshStandardMaterial({ color: 0x8a7a5a });
+            [-0.99, 0.99].forEach(x => {
+                // Vertical door line
+                const vLineGeom = new THREE.BoxGeometry(0.02, 0.9, 0.03);
+                const vLine = new THREE.Mesh(vLineGeom, doorLineMat);
+                vLine.position.set(x * 0.5, 1.2, 0.5);
+                group.add(vLine);
+                
+                // Door handle
+                const handleGeom = new THREE.BoxGeometry(0.15, 0.06, 0.05);
+                const handleMat = new THREE.MeshStandardMaterial({ color: chromeColor, metalness: 0.9 });
+                const handle = new THREE.Mesh(handleGeom, handleMat);
+                handle.position.set(x, 1.5, 0.8);
+                group.add(handle);
+            });
+            
+            // === PICKUP BED ===
+            const bedFloorGeom = new THREE.BoxGeometry(1.9, 0.15, 2.2);
+            const bedFloor = new THREE.Mesh(bedFloorGeom, bodyMat);
+            bedFloor.position.set(0, 0.85, -1.4);
+            bedFloor.castShadow = true;
+            group.add(bedFloor);
+            
+            // Bed walls
+            const bedWallMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.7 });
+            
+            // Side walls
+            const sideWallGeom = new THREE.BoxGeometry(0.08, 0.5, 2.2);
+            [-0.95, 0.95].forEach(x => {
+                const sideWall = new THREE.Mesh(sideWallGeom, bedWallMat);
+                sideWall.position.set(x, 1.15, -1.4);
+                sideWall.castShadow = true;
+                group.add(sideWall);
+            });
+            
+            // Rear wall (tailgate)
+            const tailgateGeom = new THREE.BoxGeometry(1.9, 0.5, 0.08);
+            const tailgate = new THREE.Mesh(tailgateGeom, bedWallMat);
+            tailgate.position.set(0, 1.15, -2.5);
+            tailgate.castShadow = true;
+            group.add(tailgate);
+            
+            // Front wall of bed
+            const bedFrontGeom = new THREE.BoxGeometry(1.9, 0.5, 0.08);
+            const bedFront = new THREE.Mesh(bedFrontGeom, bedWallMat);
+            bedFront.position.set(0, 1.15, -0.35);
+            group.add(bedFront);
+            
+            // === CARGO IN BED ===
+            group.cargo = [];
+            
+            // Barrel
+            const barrelGeom = new THREE.CylinderGeometry(0.3, 0.3, 0.7, 12);
+            const barrelMat = new THREE.MeshStandardMaterial({ color: 0x2255aa, roughness: 0.6 });
+            const barrel = new THREE.Mesh(barrelGeom, barrelMat);
+            barrel.position.set(-0.5, 1.3, -1.8);
+            barrel.userData = {
+                originalPos: new THREE.Vector3(-0.5, 1.3, -1.8),
+                velocity: new THREE.Vector3(0, 0, 0),
+                fallen: false
+            };
+            barrel.castShadow = true;
+            group.add(barrel);
+            group.cargo.push(barrel);
+            
+            // Crate 1
+            const crateGeom = new THREE.BoxGeometry(0.5, 0.4, 0.5);
+            const crateMat = new THREE.MeshStandardMaterial({ color: 0x8B4513, roughness: 0.9 });
+            const crate1 = new THREE.Mesh(crateGeom, crateMat);
+            crate1.position.set(0.4, 1.15, -1.2);
+            crate1.userData = {
+                originalPos: new THREE.Vector3(0.4, 1.15, -1.2),
+                velocity: new THREE.Vector3(0, 0, 0),
+                fallen: false
+            };
+            crate1.castShadow = true;
+            group.add(crate1);
+            group.cargo.push(crate1);
+            
+            // Crate 2
+            const crate2 = new THREE.Mesh(crateGeom, crateMat);
+            crate2.position.set(0.3, 1.15, -2.0);
+            crate2.userData = {
+                originalPos: new THREE.Vector3(0.3, 1.15, -2.0),
+                velocity: new THREE.Vector3(0, 0, 0),
+                fallen: false
+            };
+            crate2.castShadow = true;
+            group.add(crate2);
+            group.cargo.push(crate2);
+            
+            // Jerry can (fuel can shape)
+            const jerryGeom = new THREE.BoxGeometry(0.25, 0.4, 0.15);
+            const jerryMat = new THREE.MeshStandardMaterial({ color: 0xcc2222, roughness: 0.5 });
+            const jerry = new THREE.Mesh(jerryGeom, jerryMat);
+            jerry.position.set(-0.5, 1.15, -1.2);
+            jerry.userData = {
+                originalPos: new THREE.Vector3(-0.5, 1.15, -1.2),
+                velocity: new THREE.Vector3(0, 0, 0),
+                fallen: false
+            };
+            jerry.castShadow = true;
+            group.add(jerry);
+            group.cargo.push(jerry);
+            
+            // === WHEELS (Larger off-road style) ===
+            const wheelGeom = new THREE.CylinderGeometry(0.55, 0.55, 0.35, 20);
+            const wheelMat = new THREE.MeshStandardMaterial({ color: darkColor, roughness: 0.9 });
+            const hubGeom = new THREE.CylinderGeometry(0.25, 0.25, 0.36, 12);
+            const hubMat = new THREE.MeshStandardMaterial({ color: chromeColor, metalness: 0.7, roughness: 0.4 });
+            
+            const wheelPositions = [
+                [-1.1, 0.55, 1.8],  // Front left
+                [1.1, 0.55, 1.8],   // Front right
+                [-1.1, 0.55, -1.5], // Rear left
+                [1.1, 0.55, -1.5]   // Rear right
+            ];
+            
+            group.wheels = [];
+            wheelPositions.forEach(pos => {
+                const wheelGroup = new THREE.Group();
+                
+                const wheel = new THREE.Mesh(wheelGeom, wheelMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheelGroup.add(wheel);
+                
+                const hub = new THREE.Mesh(hubGeom, hubMat);
+                hub.rotation.z = Math.PI / 2;
+                wheelGroup.add(hub);
+                
+                wheelGroup.position.set(...pos);
+                wheelGroup.castShadow = true;
+                group.add(wheelGroup);
+                group.wheels.push(wheelGroup);
+            });
+            
+            // === HEADLIGHTS ===
+            const headlightGeom = new THREE.CylinderGeometry(0.15, 0.12, 0.1, 12);
+            const headlightMat = new THREE.MeshStandardMaterial({ 
+                color: 0xffffee, 
+                emissive: 0xffffaa, 
+                emissiveIntensity: 0.3 
+            });
+            
+            [-0.65, 0.65].forEach(x => {
+                const headlight = new THREE.Mesh(headlightGeom, headlightMat);
+                headlight.rotation.x = Math.PI / 2;
+                headlight.position.set(x, 1.0, 2.95);
+                group.add(headlight);
+            });
+            
+            // Headlight beams (for night)
+            group.headlights = [];
+            [-0.65, 0.65].forEach(x => {
+                const spotLight = new THREE.SpotLight(0xffffcc, 0, 60, 0.5, 0.5);
+                spotLight.position.set(x, 1.0, 2.95);
+                spotLight.target.position.set(x, 0, 30);
+                group.add(spotLight);
+                group.add(spotLight.target);
+                group.headlights.push(spotLight);
+            });
+            
+            // === TAIL LIGHTS ===
+            const tailLightGeom = new THREE.BoxGeometry(0.2, 0.15, 0.05);
+            const tailLightMat = new THREE.MeshStandardMaterial({ color: 0xff0000, emissive: 0x440000 });
+            [-0.8, 0.8].forEach(x => {
+                const tailLight = new THREE.Mesh(tailLightGeom, tailLightMat);
+                tailLight.position.set(x, 1.0, -2.55);
+                group.add(tailLight);
+            });
+            
+            // === SIDE MIRRORS ===
+            const mirrorGeom = new THREE.BoxGeometry(0.15, 0.1, 0.08);
+            const mirrorMat = new THREE.MeshStandardMaterial({ color: darkColor });
+            [-1.1, 1.1].forEach(x => {
+                const mirror = new THREE.Mesh(mirrorGeom, mirrorMat);
+                mirror.position.set(x, 1.6, 1.0);
+                group.add(mirror);
+            });
+            
+            // === ROOF RACK ===
+            const rackBarGeom = new THREE.CylinderGeometry(0.03, 0.03, 1.8, 6);
+            const rackMat = new THREE.MeshStandardMaterial({ color: darkColor });
+            
+            [-0.5, 0.5].forEach(z => {
+                const bar = new THREE.Mesh(rackBarGeom, rackMat);
+                bar.rotation.z = Math.PI / 2;
+                bar.position.set(0, 2.45, 0.5 + z * 0.6);
+                group.add(bar);
+            });
+            
+            // Rack supports
+            [[-0.85, 0.2], [0.85, 0.2], [-0.85, 0.8], [0.85, 0.8]].forEach(([x, z]) => {
+                const supportGeom = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 6);
+                const support = new THREE.Mesh(supportGeom, rackMat);
+                support.position.set(x, 2.36, z);
+                group.add(support);
+            });
+            
+            return group;
+        }
+        
+        // ============= TERRAIN GENERATION =============
+        function getTerrainHeight(x, z) {
+            const level = CONFIG.levels[state.currentLevel];
+            
+            let height = 0;
+            
+            // Gentle rolling dunes
+            height += Math.sin(x * 0.06 + z * 0.025) * level.duneHeight;
+            height += Math.cos(x * 0.04 + z * 0.04) * level.duneHeight * 0.5;
+            height += Math.sin(x * 0.12 + z * 0.06) * level.duneHeight * 0.25;
+            
+            // Road depression in the middle
+            const roadWidth = 10;
+            const roadFactor = Math.exp(-(x * x) / (roadWidth * roadWidth));
+            height *= (1 - roadFactor * 0.85);
+            
+            return height;
+        }
+        
+        function createTerrainChunk(zPosition, chunkIndex) {
+            const level = CONFIG.levels[state.currentLevel];
+            
+            const geometry = new THREE.PlaneGeometry(
+                100,
+                TERRAIN_CHUNK_SIZE,
+                TERRAIN_RESOLUTION,
+                TERRAIN_RESOLUTION
+            );
+            
+            const positions = geometry.attributes.position.array;
+            
+            for (let i = 0; i < positions.length; i += 3) {
+                const x = positions[i];
+                const localZ = positions[i + 1];
+                const worldZ = zPosition + localZ;
+                
+                positions[i + 2] = getTerrainHeight(x, worldZ);
+            }
+            
+            geometry.computeVertexNormals();
+            
+            const sandColors = {
+                morning: 0xE8D4A8,
+                afternoon: 0xDEB887,
+                night: 0x3a3a4a
+            };
+            
+            const material = new THREE.MeshStandardMaterial({
+                color: sandColors[level.timeOfDay],
+                roughness: 0.95,
+                metalness: 0,
+                flatShading: true
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.rotation.x = -Math.PI / 2;
+            mesh.position.z = zPosition;
+            mesh.position.y = 0;
+            mesh.receiveShadow = true;
+            
+            // Solid base underneath
+            const baseGeometry = new THREE.BoxGeometry(100, 8, TERRAIN_CHUNK_SIZE);
+            const baseMaterial = new THREE.MeshStandardMaterial({
+                color: sandColors[level.timeOfDay],
+                roughness: 1
+            });
+            const base = new THREE.Mesh(baseGeometry, baseMaterial);
+            base.position.set(0, -4, zPosition);
+            
+            return { surface: mesh, base: base };
+        }
+        
+        // ============= OBSTACLES =============
+        function createObstacle(z) {
+            const level = CONFIG.levels[state.currentLevel];
+            const type = Math.random() > 0.35 ? 'rock' : 'hole';
+            
+            let mesh;
+            const x = (Math.random() - 0.5) * 14;
+            
+            if (type === 'rock') {
+                const rockSize = 0.7 + Math.random() * 1.0;
+                const geom = new THREE.DodecahedronGeometry(rockSize, 1);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: level.timeOfDay === 'night' ? 0x3a3a4a : 0x8B7355,
+                    roughness: 0.9,
+                    flatShading: true
+                });
+                mesh = new THREE.Mesh(geom, mat);
+                
+                const terrainHeight = getTerrainHeight(x, z);
+                mesh.scale.y = 0.5 + Math.random() * 0.3;
+                mesh.position.set(x, terrainHeight + rockSize * 0.3, z);
+                mesh.rotation.set(Math.random(), Math.random(), Math.random());
+                mesh.castShadow = true;
+                mesh.userData = { type: 'rock', radius: rockSize + 0.3 };
+            } else {
+                const holeSize = 1.0 + Math.random() * 0.6;
+                const geom = new THREE.CircleGeometry(holeSize, 16);
+                const mat = new THREE.MeshStandardMaterial({
+                    color: level.timeOfDay === 'night' ? 0x1a1a2a : 0x3a2a1a,
+                    roughness: 1
+                });
+                mesh = new THREE.Mesh(geom, mat);
+                mesh.rotation.x = -Math.PI / 2;
+                const terrainHeight = getTerrainHeight(x, z);
+                mesh.position.set(x, terrainHeight + 0.02, z);
+                mesh.userData = { type: 'hole', radius: holeSize };
+            }
+            
+            return mesh;
+        }
+        
+        // ============= FUEL CANS =============
+        function createFuelCan(z) {
+            const level = CONFIG.levels[state.currentLevel];
+            const x = (Math.random() - 0.5) * 12;
+            
+            const group = new THREE.Group();
+            
+            // Jerry can shape
+            const canGeom = new THREE.BoxGeometry(0.4, 0.6, 0.25);
+            const canMat = new THREE.MeshStandardMaterial({ 
+                color: 0x22aa22, 
+                roughness: 0.5,
+                metalness: 0.3
+            });
+            const can = new THREE.Mesh(canGeom, canMat);
+            can.castShadow = true;
+            group.add(can);
+            
+            // Handle
+            const handleGeom = new THREE.TorusGeometry(0.1, 0.025, 8, 12, Math.PI);
+            const handleMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+            const handle = new THREE.Mesh(handleGeom, handleMat);
+            handle.position.set(0, 0.35, 0);
+            handle.rotation.x = Math.PI / 2;
+            group.add(handle);
+            
+            // Spout
+            const spoutGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.15, 8);
+            const spout = new THREE.Mesh(spoutGeom, handleMat);
+            spout.position.set(0.1, 0.35, 0);
+            group.add(spout);
+            
+            // Glow effect
+            const glowGeom = new THREE.SphereGeometry(0.5, 16, 16);
+            const glowMat = new THREE.MeshBasicMaterial({
+                color: 0x44ff44,
+                transparent: true,
+                opacity: 0.2
+            });
+            const glow = new THREE.Mesh(glowGeom, glowMat);
+            group.add(glow);
+            group.glowMesh = glow;
+            
+            const terrainHeight = getTerrainHeight(x, z);
+            group.position.set(x, terrainHeight + 0.4, z);
+            group.userData = { radius: 1.5 };
+            
+            return group;
+        }
+        
+        // ============= DECORATIONS =============
+        function createPalmTree(x, z) {
+            const group = new THREE.Group();
+            const level = CONFIG.levels[state.currentLevel];
+            
+            const trunkGeom = new THREE.CylinderGeometry(0.15, 0.35, 5, 8);
+            const trunkMat = new THREE.MeshStandardMaterial({ 
+                color: level.timeOfDay === 'night' ? 0x2a1a10 : 0x4a3520, 
+                roughness: 0.9 
+            });
+            const trunk = new THREE.Mesh(trunkGeom, trunkMat);
+            trunk.position.y = 2.5;
+            trunk.castShadow = true;
+            group.add(trunk);
+            
+            const leafMat = new THREE.MeshStandardMaterial({ 
+                color: level.timeOfDay === 'night' ? 0x1a4a1a : 0x228B22, 
+                roughness: 0.8, 
+                side: THREE.DoubleSide 
+            });
+            for (let i = 0; i < 8; i++) {
+                const leafGeom = new THREE.PlaneGeometry(0.6, 2.5);
+                const leaf = new THREE.Mesh(leafGeom, leafMat);
+                leaf.position.y = 5;
+                leaf.rotation.y = (i / 8) * Math.PI * 2;
+                leaf.rotation.x = -0.6;
+                group.add(leaf);
+            }
+            
+            const terrainHeight = getTerrainHeight(x, z);
+            group.position.set(x, terrainHeight, z);
+            return group;
+        }
+        
+        function createTent(x, z) {
+            const group = new THREE.Group();
+            const level = CONFIG.levels[state.currentLevel];
+            
+            const tentGeom = new THREE.ConeGeometry(2.5, 2.2, 4);
+            const tentMat = new THREE.MeshStandardMaterial({ 
+                color: level.timeOfDay === 'night' ? 0x3a3a4a : 0xC19A6B, 
+                roughness: 0.9,
+                side: THREE.DoubleSide
+            });
+            const tent = new THREE.Mesh(tentGeom, tentMat);
+            tent.position.y = 1.1;
+            tent.rotation.y = Math.PI / 4;
+            tent.castShadow = true;
+            group.add(tent);
+            
+            if (level.timeOfDay === 'night') {
+                const fireLight = new THREE.PointLight(0xff6600, 1.5, 12);
+                fireLight.position.set(3.5, 0.8, 0);
+                group.add(fireLight);
+                
+                const fireGeom = new THREE.ConeGeometry(0.25, 0.8, 8);
+                const fireMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
+                const fire = new THREE.Mesh(fireGeom, fireMat);
+                fire.position.set(3.5, 0.4, 0);
+                group.add(fire);
+            }
+            
+            const terrainHeight = getTerrainHeight(x, z);
+            group.position.set(x, terrainHeight, z);
+            return group;
+        }
+        
+        function createGasStation(z) {
+            const group = new THREE.Group();
+            const level = CONFIG.levels[state.currentLevel];
+            
+            const platformGeom = new THREE.BoxGeometry(18, 0.4, 14);
+            const platformMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8 });
+            const platform = new THREE.Mesh(platformGeom, platformMat);
+            platform.position.y = 0.2;
+            platform.receiveShadow = true;
+            group.add(platform);
+            
+            const roofGeom = new THREE.BoxGeometry(14, 0.4, 10);
+            const roofMat = new THREE.MeshStandardMaterial({ 
+                color: level.timeOfDay === 'night' ? 0x2a2a3a : 0xCC0000, 
+                roughness: 0.7 
+            });
+            const roof = new THREE.Mesh(roofGeom, roofMat);
+            roof.position.y = 5;
+            roof.castShadow = true;
+            group.add(roof);
+            
+            const pillarGeom = new THREE.CylinderGeometry(0.25, 0.25, 4.6, 8);
+            const pillarMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+            [[-5.5, 2.7, 4], [5.5, 2.7, 4], [-5.5, 2.7, -4], [5.5, 2.7, -4]].forEach(pos => {
+                const pillar = new THREE.Mesh(pillarGeom, pillarMat);
+                pillar.position.set(...pos);
+                pillar.castShadow = true;
+                group.add(pillar);
+            });
+            
+            const pumpGeom = new THREE.BoxGeometry(0.8, 2.2, 0.6);
+            const pumpMat = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+            [-2.5, 0, 2.5].forEach(px => {
+                const pump = new THREE.Mesh(pumpGeom, pumpMat);
+                pump.position.set(px, 1.5, 0);
+                pump.castShadow = true;
+                group.add(pump);
+            });
+            
+            if (level.timeOfDay === 'night') {
+                const light = new THREE.PointLight(0xffffcc, 4, 45);
+                light.position.set(0, 4.5, 0);
+                group.add(light);
+            }
+            
+            [-14, 14].forEach(px => {
+                const palm = createPalmTree(px, 0);
+                palm.position.y = 0;
+                group.add(palm);
+            });
+            
+            group.position.set(0, 0, z);
+            return group;
+        }
+        
+        function createCamp(z) {
+            const group = new THREE.Group();
+            
+            const mainTentGeom = new THREE.ConeGeometry(4.5, 3.5, 6);
+            const mainTentMat = new THREE.MeshStandardMaterial({ 
+                color: 0x8B4513, 
+                roughness: 0.9,
+                side: THREE.DoubleSide
+            });
+            const mainTent = new THREE.Mesh(mainTentGeom, mainTentMat);
+            mainTent.position.set(0, 1.75, 0);
+            mainTent.rotation.y = Math.PI / 6;
+            mainTent.castShadow = true;
+            group.add(mainTent);
+            
+            [[-9, 4], [9, 3], [-7, -5], [7, -4]].forEach(([tx, tz]) => {
+                const tent = createTent(tx, tz);
+                tent.position.y = 0;
+                group.add(tent);
+            });
+            
+            [[-16, 0], [16, 0], [0, -10], [-11, 7], [11, 7]].forEach(([px, pz]) => {
+                const palm = createPalmTree(px, pz);
+                palm.position.y = 0;
+                group.add(palm);
+            });
+            
+            const fireLight = new THREE.PointLight(0xff6600, 6, 30);
+            fireLight.position.set(0, 1.5, 9);
+            group.add(fireLight);
+            
+            const fireGeom = new THREE.ConeGeometry(0.6, 1.5, 8);
+            const fireMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
+            const fire = new THREE.Mesh(fireGeom, fireMat);
+            fire.position.set(0, 0.75, 9);
+            group.add(fire);
+            
+            const archGeom = new THREE.TorusGeometry(3.5, 0.25, 8, 16, Math.PI);
+            const archMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+            const arch = new THREE.Mesh(archGeom, archMat);
+            arch.position.set(0, 3.5, 18);
+            arch.rotation.x = Math.PI / 2;
+            group.add(arch);
+            
+            [-3.5, 3.5].forEach(px => {
+                const poleGeom = new THREE.CylinderGeometry(0.25, 0.25, 3.5, 8);
+                const pole = new THREE.Mesh(poleGeom, archMat);
+                pole.position.set(px, 1.75, 18);
+                group.add(pole);
+            });
+            
+            group.position.set(0, 0, z);
+            return group;
+        }
+        
+        // ============= STARS =============
+        function createStars() {
+            const geometry = new THREE.BufferGeometry();
+            const vertices = [];
+            
+            for (let i = 0; i < 1000; i++) {
+                const x = (Math.random() - 0.5) * 800;
+                const y = 40 + Math.random() * 200;
+                const z = (Math.random() - 0.5) * 800;
+                vertices.push(x, y, z);
+            }
+            
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            
+            const material = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 1.2,
+                transparent: true,
+                opacity: 0.9,
+                sizeAttenuation: true
+            });
+            
+            return new THREE.Points(geometry, material);
+        }
+        
+        // ============= DUST PARTICLES =============
+        function createDustParticles() {
+            const count = 200;
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(count * 3);
+            const velocities = [];
+            
+            for (let i = 0; i < count; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 6;
+                positions[i * 3 + 1] = Math.random() * 1.0;
+                positions[i * 3 + 2] = Math.random() * -6 - 2;
+                
+                velocities.push({
+                    x: (Math.random() - 0.5) * 0.5,
+                    y: Math.random() * 0.3 + 0.1,
+                    z: -Math.random() * 0.8 - 0.2
+                });
+            }
+            
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            
+            const level = CONFIG.levels[state.currentLevel];
+            const material = new THREE.PointsMaterial({
+                color: level.timeOfDay === 'night' ? 0x666688 : 0xD4B896,
+                size: 0.15,
+                transparent: true,
+                opacity: 0.7
+            });
+            
+            const particles = new THREE.Points(geometry, material);
+            particles.userData.velocities = velocities;
+            
+            return particles;
+        }
+        
+        // ============= LEVEL SETUP =============
+        function setupLevel() {
+            // Clear existing objects
+            terrain.forEach(t => {
+                scene.remove(t.surface);
+                scene.remove(t.base);
+            });
+            obstacles.forEach(o => scene.remove(o));
+            fuelCans.forEach(f => scene.remove(f));
+            decorations.forEach(d => scene.remove(d));
+            stars.forEach(s => scene.remove(s));
+            if (dustParticles) {
+                if (dustParticles.parent) dustParticles.parent.remove(dustParticles);
+                scene.remove(dustParticles);
+            }
+            if (goalMarker) scene.remove(goalMarker);
+            
+            terrain = [];
+            obstacles = [];
+            fuelCans = [];
+            decorations = [];
+            stars = [];
+            
+            const level = CONFIG.levels[state.currentLevel];
+            
+            // Sky and fog
+            scene.background = new THREE.Color(level.skyColors.top);
+            scene.fog = new THREE.Fog(level.fogColor, level.fogNear, level.fogFar);
+            
+            // Clear lights
+            scene.children = scene.children.filter(c => !(c instanceof THREE.Light) || c.parent === vehicle);
+            
+            const ambientLight = new THREE.AmbientLight(0xffffff, level.timeOfDay === 'night' ? 0.15 : 0.5);
+            scene.add(ambientLight);
+            
+            const sunLight = new THREE.DirectionalLight(
+                level.timeOfDay === 'night' ? 0x6666aa : 0xffffee,
+                level.sunIntensity
+            );
+            sunLight.position.set(
+                level.timeOfDay === 'afternoon' ? -40 : 40,
+                60,
+                40
+            );
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 1024;
+            sunLight.shadow.mapSize.height = 1024;
+            sunLight.shadow.camera.near = 1;
+            sunLight.shadow.camera.far = 200;
+            sunLight.shadow.camera.left = -60;
+            sunLight.shadow.camera.right = 60;
+            sunLight.shadow.camera.top = 60;
+            sunLight.shadow.camera.bottom = -60;
+            scene.add(sunLight);
+            
+            // Generate terrain
+            const numChunks = Math.ceil((level.distance + 200) / TERRAIN_CHUNK_SIZE) + 3;
+            for (let i = 0; i < numChunks; i++) {
+                const zPos = i * TERRAIN_CHUNK_SIZE - TERRAIN_CHUNK_SIZE;
+                const chunk = createTerrainChunk(zPos, i);
+                terrain.push(chunk);
+                scene.add(chunk.surface);
+                scene.add(chunk.base);
+            }
+            
+            // Generate obstacles
+            for (let z = 50; z < level.distance - 40; z += 18) {
+                if (Math.random() < level.obstacleFrequency) {
+                    const obstacle = createObstacle(z);
+                    obstacles.push(obstacle);
+                    scene.add(obstacle);
+                }
+            }
+            
+            // Generate fuel cans (rare)
+            for (let z = 80; z < level.distance - 60; z += 50) {
+                if (Math.random() < level.fuelCanFrequency) {
+                    const fuelCan = createFuelCan(z);
+                    fuelCans.push(fuelCan);
+                    scene.add(fuelCan);
+                }
+            }
+            
+            // Decorations
+            for (let z = 100; z < level.distance - 150; z += 130) {
+                if (Math.random() > 0.55) {
+                    const side = Math.random() > 0.5 ? 1 : -1;
+                    const tent = createTent(side * (22 + Math.random() * 12), z);
+                    decorations.push(tent);
+                    scene.add(tent);
+                }
+            }
+            
+            // Goal
+            if (state.currentLevel === 2) {
+                goalMarker = createCamp(level.distance + 25);
+            } else {
+                goalMarker = createGasStation(level.distance + 25);
+            }
+            scene.add(goalMarker);
+            
+            // Night features
+            if (level.timeOfDay === 'night') {
+                const starField = createStars();
+                stars.push(starField);
+                scene.add(starField);
+                
+                vehicle.headlights.forEach(light => {
+                    light.intensity = 5;
+                });
+                
+                const moonGeom = new THREE.SphereGeometry(10, 16, 16);
+                const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffee });
+                const moon = new THREE.Mesh(moonGeom, moonMat);
+                moon.position.set(100, 120, 300);
+                stars.push(moon);
+                scene.add(moon);
+                
+                const moonLight = new THREE.PointLight(0xaaaaff, 0.3, 600);
+                moonLight.position.copy(moon.position);
+                scene.add(moonLight);
+            } else {
+                vehicle.headlights.forEach(light => {
+                    light.intensity = 0;
+                });
+            }
+            
+            // Dust particles
+            dustParticles = createDustParticles();
+            vehicle.add(dustParticles);
+            dustParticles.position.set(0, 0.3, -2.5);
+            
+            // Mirage
+            mirageOverlay.style.display = level.timeOfDay === 'night' ? 'none' : 'block';
+            
+            // Reset vehicle cargo
+            if (vehicle.cargo) {
+                vehicle.cargo.forEach(item => {
+                    item.position.copy(item.userData.originalPos);
+                    item.rotation.set(0, 0, 0);
+                    item.userData.velocity.set(0, 0, 0);
+                    item.userData.fallen = false;
+                    if (!vehicle.children.includes(item)) {
+                        vehicle.add(item);
+                    }
+                });
+            }
+            
+            // Reset state
+            state.fuel = 100;
+            state.distance = 0;
+            state.steering = 0;
+            state.targetSteering = 0;
+            state.vehicleVelocityY = 0;
+            state.vehicleY = CONFIG.vehicle.groundOffset;
+            state.isGrounded = true;
+            state.lastCollisionTime = 0;
+            
+            // Reset vehicle
+            vehicle.position.set(0, state.vehicleY, 0);
+            vehicle.rotation.set(0, 0, 0);
+            
+            // Update HUD
+            levelName.textContent = level.name;
+            updateHUD();
+        }
+        
+        // ============= GAME INITIALIZATION =============
+        function initGame() {
+            initThreeJS();
+            vehicle = createVehicle();
+            scene.add(vehicle);
+            setupLevel();
+        }
+        
+        // ============= INPUT HANDLING =============
+        function setupControls() {
+            document.addEventListener('touchstart', (e) => {
+                if (!state.isPlaying) return;
+                state.touchStartX = e.touches[0].clientX;
+            }, { passive: false });
+            
+            document.addEventListener('touchmove', (e) => {
+                if (!state.isPlaying) return;
+                e.preventDefault();
+                
+                const touchX = e.touches[0].clientX;
+                const deltaX = touchX - state.touchStartX;
+                
+                state.targetSteering = -deltaX * CONFIG.vehicle.steeringSensitivity;
+                state.targetSteering = Math.max(-CONFIG.vehicle.maxSteerAngle, 
+                                        Math.min(CONFIG.vehicle.maxSteerAngle, state.targetSteering));
+            }, { passive: false });
+            
+            document.addEventListener('touchend', () => {
+                state.targetSteering = 0;
+            });
+            
+            document.addEventListener('keydown', (e) => {
+                if (!state.isPlaying) return;
+                if (e.key === 'ArrowLeft' || e.key === 'a') {
+                    state.targetSteering = CONFIG.vehicle.maxSteerAngle;
+                } else if (e.key === 'ArrowRight' || e.key === 'd') {
+                    state.targetSteering = -CONFIG.vehicle.maxSteerAngle;
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'ArrowRight' || e.key === 'd') {
+                    state.targetSteering = 0;
+                }
+            });
+        }
+        
+        // ============= COLLISION DETECTION =============
+        function checkCollisions() {
+            const vehiclePos = vehicle.position;
+            const now = Date.now();
+            
+            // Check obstacles
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                const obstacle = obstacles[i];
+                const dx = vehiclePos.x - obstacle.position.x;
+                const dz = vehiclePos.z - obstacle.position.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                
+                if (dist < obstacle.userData.radius + 1.0) {
+                    if (now - state.lastCollisionTime > 500) {
+                        state.fuel -= 8;
+                        audio.playCrash();
+                        
+                        // Bounce up
+                        if (state.isGrounded) {
+                            state.vehicleVelocityY = 6;
+                            state.isGrounded = false;
+                        }
+                        
+                        // Shake cargo
+                        if (vehicle.cargo) {
+                            vehicle.cargo.forEach(item => {
+                                if (!item.userData.fallen) {
+                                    const force = 3 + Math.random() * 2;
+                                    item.userData.velocity.set(
+                                        (Math.random() - 0.5) * force,
+                                        force * 0.8,
+                                        -force * 0.5
+                                    );
+                                }
+                            });
+                        }
+                        
+                        state.lastCollisionTime = now;
+                    }
+                    
+                    vehicle.position.z -= 0.2;
+                    scene.remove(obstacle);
+                    obstacles.splice(i, 1);
+                    return true;
+                }
+            }
+            
+            // Check fuel cans
+            for (let i = fuelCans.length - 1; i >= 0; i--) {
+                const fuelCan = fuelCans[i];
+                const dx = vehiclePos.x - fuelCan.position.x;
+                const dz = vehiclePos.z - fuelCan.position.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                
+                if (dist < fuelCan.userData.radius + 1.0) {
+                    state.fuel = Math.min(100, state.fuel + 10);
+                    audio.playFuelPickup();
+                    
+                    // Show notification
+                    fuelNotification.style.display = 'block';
+                    setTimeout(() => {
+                        fuelNotification.style.display = 'none';
+                    }, 1500);
+                    
+                    scene.remove(fuelCan);
+                    fuelCans.splice(i, 1);
+                }
+            }
+            
+            return false;
+        }
+        
+        // ============= UPDATE CARGO =============
+        function updateCargo(delta) {
+            if (!vehicle.cargo) return;
+            
+            vehicle.cargo.forEach(item => {
+                if (item.userData.fallen) {
+                    // Already fallen, update in world space
+                    item.userData.velocity.y -= 15 * delta;
+                    item.position.x += item.userData.velocity.x * delta;
+                    item.position.y += item.userData.velocity.y * delta;
+                    item.position.z += item.userData.velocity.z * delta;
+                    
+                    // Ground collision
+                    const groundHeight = getTerrainHeight(item.position.x, item.position.z);
+                    if (item.position.y < groundHeight + 0.2) {
+                        item.position.y = groundHeight + 0.2;
+                        item.userData.velocity.multiplyScalar(0.3);
+                    }
+                    
+                    // Rotation
+                    item.rotation.x += item.userData.velocity.z * delta;
+                    item.rotation.z += item.userData.velocity.x * delta;
+                    
+                } else if (item.userData.velocity.lengthSq() > 0.1) {
+                    // Moving but still in vehicle
+                    item.userData.velocity.y -= 20 * delta;
+                    
+                    item.position.x += item.userData.velocity.x * delta;
+                    item.position.y += item.userData.velocity.y * delta;
+                    item.position.z += item.userData.velocity.z * delta;
+                    
+                    // Check if fell off
+                    const localPos = item.position;
+                    if (localPos.x < -1.1 || localPos.x > 1.1 || localPos.z < -2.7 || localPos.y > 2.5) {
+                        // Convert to world position
+                        const worldPos = new THREE.Vector3();
+                        item.getWorldPosition(worldPos);
+                        
+                        vehicle.remove(item);
+                        scene.add(item);
+                        item.position.copy(worldPos);
+                        item.userData.fallen = true;
+                        
+                        // Add forward momentum
+                        item.userData.velocity.z += CONFIG.vehicle.speed * 0.3;
+                    }
+                    
+                    // Damping
+                    item.userData.velocity.multiplyScalar(0.95);
+                    
+                    // Bounds check within truck bed
+                    if (!item.userData.fallen) {
+                        item.position.x = Math.max(-0.8, Math.min(0.8, item.position.x));
+                        item.position.z = Math.max(-2.4, Math.min(-0.4, item.position.z));
+                        
+                        if (item.position.y < item.userData.originalPos.y) {
+                            item.position.y = item.userData.originalPos.y;
+                            item.userData.velocity.y = 0;
+                        }
+                    }
+                    
+                    // Small rotation
+                    item.rotation.x = item.userData.velocity.z * 0.1;
+                    item.rotation.z = -item.userData.velocity.x * 0.1;
+                }
+            });
+        }
+        
+        // ============= HUD UPDATE =============
+        function updateHUD() {
+            fuelFill.style.width = `${Math.max(0, state.fuel)}%`;
+            
+            if (state.fuel > 50) {
+                fuelFill.style.background = 'linear-gradient(90deg, #44ff44, #88ff88)';
+            } else if (state.fuel > 25) {
+                fuelFill.style.background = 'linear-gradient(90deg, #ffaa00, #ffcc00)';
+            } else {
+                fuelFill.style.background = 'linear-gradient(90deg, #ff4444, #ff6666)';
+            }
+            
+            const level = CONFIG.levels[state.currentLevel];
+            const remaining = Math.max(0, Math.floor(level.distance - state.distance));
+            distanceText.textContent = `المتبقي: ${remaining} م`;
+        }
+        
+        // ============= UPDATE DUST PARTICLES =============
+        function updateDustParticles(delta) {
+            if (!dustParticles || !state.isGrounded) return;
+            
+            const positions = dustParticles.geometry.attributes.position.array;
+            const velocities = dustParticles.userData.velocities;
+            
+            for (let i = 0; i < positions.length / 3; i++) {
+                const idx = i * 3;
+                
+                positions[idx] += velocities[i].x * delta * 60;
+                positions[idx + 1] += velocities[i].y * delta * 60;
+                positions[idx + 2] += velocities[i].z * delta * 60;
+                
+                // Reset if too far
+                if (positions[idx + 2] < -10 || positions[idx + 1] > 2.5) {
+                    positions[idx] = (Math.random() - 0.5) * 5;
+                    positions[idx + 1] = Math.random() * 0.3;
+                    positions[idx + 2] = Math.random() * -1.5 - 1;
+                    
+                    velocities[i].x = (Math.random() - 0.5) * 0.5;
+                    velocities[i].y = Math.random() * 0.3 + 0.1;
+                    velocities[i].z = -Math.random() * 0.8 - 0.2;
+                }
+            }
+            
+            dustParticles.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        // ============= GAME LOOP =============
+        function gameLoop() {
+            requestAnimationFrame(gameLoop);
+            
+            if (!state.isPlaying || state.isPaused) {
+                renderer.render(scene, camera);
+                return;
+            }
+            
+            const delta = Math.min(clock.getDelta(), 0.05);
+            const level = CONFIG.levels[state.currentLevel];
+            
+            // Steering
+            state.steering += (state.targetSteering - state.steering) * (1 - CONFIG.vehicle.steeringDamping);
+            
+            // Movement
+            const speed = CONFIG.vehicle.speed;
+            vehicle.position.z += speed * delta;
+            state.distance = vehicle.position.z;
+            
+            vehicle.position.x += state.steering * speed * delta;
+            vehicle.position.x = Math.max(-25, Math.min(25, vehicle.position.x));
+            
+            // Terrain following
+            const targetHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z) + CONFIG.vehicle.groundOffset;
+            
+            if (!state.isGrounded) {
+                state.vehicleVelocityY -= CONFIG.vehicle.gravity * delta;
+                state.vehicleY += state.vehicleVelocityY * delta;
+                
+                if (state.vehicleY <= targetHeight) {
+                    state.vehicleY = targetHeight;
+                    state.vehicleVelocityY = 0;
+                    state.isGrounded = true;
+                }
+            } else {
+                const heightDiff = targetHeight - state.vehicleY;
+                state.vehicleY += heightDiff * CONFIG.vehicle.terrainFollowSpeed;
+                
+                if (heightDiff < -0.3) {
+                    state.isGrounded = false;
+                    state.vehicleVelocityY = 0;
+                }
+            }
+            
+            vehicle.position.y = state.vehicleY;
+            
+            // Terrain tilt
+            const frontHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z + 2);
+            const backHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z - 2);
+            const terrainPitch = Math.atan2(frontHeight - backHeight, 4);
+            
+            vehicle.rotation.z = -state.steering * CONFIG.vehicle.bodyTiltFactor;
+            vehicle.rotation.y = state.steering * 0.3;
+            vehicle.rotation.x = -terrainPitch * 0.6;
+            
+            // Wheels
+            vehicle.wheels.forEach(wheel => {
+                wheel.children[0].rotation.x += speed * delta * 2;
+                wheel.children[1].rotation.x += speed * delta * 2;
+            });
+            
+            // Camera
+            camera.position.x = vehicle.position.x * 0.3;
+            camera.position.y = vehicle.position.y + 7;
+            camera.position.z = vehicle.position.z - 14;
+            camera.lookAt(
+                vehicle.position.x * 0.5,
+                vehicle.position.y + 2,
+                vehicle.position.z + 18
+            );
+            
+            // Update systems
+            updateDustParticles(delta);
+            updateCargo(delta);
+            
+            // Animate fuel cans
+            fuelCans.forEach(can => {
+                can.rotation.y += delta * 2;
+                can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + Math.sin(Date.now() * 0.003) * 0.15;
+                if (can.glowMesh) {
+                    can.glowMesh.material.opacity = 0.15 + Math.sin(Date.now() * 0.005) * 0.1;
+                }
+            });
+            
+            // Stars twinkle
+            if (level.timeOfDay === 'night' && stars[0]) {
+                stars[0].material.opacity = 0.6 + Math.sin(Date.now() * 0.003) * 0.3;
+            }
+            
+            // Fuel consumption
+            state.fuel -= level.fuelConsumption * delta * 60;
+            
+            // Collisions
+            checkCollisions();
+            
+            // Audio
+            audio.updateEngine(speed, state.steering);
+            
+            // HUD
+            updateHUD();
+            
+            // Win condition (8 meters before goal)
+            if (state.distance >= level.distance - 8) {
+                completeLevel();
+            }
+            
+            // Lose condition
+            if (state.fuel <= 0) {
+                gameOver(false);
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // ============= LEVEL COMPLETION =============
+        function completeLevel() {
+            state.isPaused = true;
+            audio.playLevelComplete();
+            
+            if (state.currentLevel < 2) {
+                const nextLevel = CONFIG.levels[state.currentLevel + 1];
+                transitionText.textContent = nextLevel.name;
+                transitionSubtitle.textContent = `الهدف: الوصول إلى ${nextLevel.targetName}`;
+                levelTransition.style.display = 'flex';
+                
+                setTimeout(() => {
+                    levelTransition.style.display = 'none';
+                    state.currentLevel++;
+                    setupLevel();
+                    state.isPaused = false;
+                }, 3000);
+            } else {
+                gameOver(true);
+            }
+        }
+        
+        // ============= GAME OVER =============
+        function gameOver(won) {
+            state.isPlaying = false;
+            state.gameOver = true;
+            audio.stopEngine();
+            
+            if (won) {
+                endTitle.textContent = '🎉 مبروك!';
+                endMessage.textContent = 'وصلت للمخيم الصحراوي بسلام! أنت ناجٍ حقيقي!';
+            } else {
+                endTitle.textContent = '⛽ نفذ الوقود!';
+                endMessage.textContent = 'لم تستطع الوصول في الوقت المناسب. حاول مرة أخرى!';
+            }
+            
+            hud.style.display = 'none';
+            touchHint.style.display = 'none';
+            endScreen.style.display = 'flex';
+        }
+        
+        // ============= START GAME =============
+        function startGame() {
+            audio.init();
+            startScreen.style.display = 'none';
+            hud.style.display = 'flex';
+            touchHint.style.display = 'block';
+            
+            state.isPlaying = true;
+            state.gameOver = false;
+            state.currentLevel = 0;
+            
+            setupLevel();
+            audio.startEngine();
+            clock.start();
+            
+            setTimeout(() => {
+                touchHint.style.display = 'none';
+            }, 5000);
+        }
+        
+        // ============= RESTART GAME =============
+        function restartGame() {
+            endScreen.style.display = 'none';
+            state.currentLevel = 0;
+            state.isPlaying = true;
+            state.isPaused = false;
+            state.gameOver = false;
+            
+            // Reset clock
+            clock.stop();
+            clock.start();
+            
+            setupLevel();
+            hud.style.display = 'flex';
+            audio.startEngine();
+        }
+        
+        // ============= EVENT LISTENERS =============
+        startBtn.addEventListener('click', startGame);
+        retryBtn.addEventListener('click', restartGame);
+        
+        // ============= INITIALIZE =============
+        initBackgroundCanvas();
+        initGame();
+        setupControls();
+        gameLoop();
+    </script>
+</body>
+</html>
