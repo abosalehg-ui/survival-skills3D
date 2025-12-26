@@ -118,7 +118,7 @@
             top: 0;
             left: 0;
             width: 100%;
-            padding: 15px;
+            padding: 10px;
             display: none;
             justify-content: space-between;
             align-items: flex-start;
@@ -129,24 +129,24 @@
         .hud-panel {
             background: rgba(0,0,0,0.5);
             backdrop-filter: blur(10px);
-            border-radius: 15px;
-            padding: 12px 18px;
+            border-radius: 12px;
+            padding: 8px 12px;
             color: #fff;
         }
         
         .fuel-container {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
         
         .fuel-icon {
-            font-size: 1.5rem;
+            font-size: clamp(1rem, 3vw, 1.3rem);
         }
         
         .fuel-bar {
-            width: 120px;
-            height: 20px;
+            width: clamp(80px, 20vw, 120px);
+            height: clamp(14px, 3vw, 20px);
             background: rgba(255,255,255,0.2);
             border-radius: 10px;
             overflow: hidden;
@@ -164,12 +164,12 @@
         }
         
         .level-name {
-            font-size: 1.1rem;
+            font-size: clamp(0.65rem, 2.2vw, 0.9rem);
             font-weight: bold;
         }
         
         .distance {
-            font-size: 0.9rem;
+            font-size: clamp(0.6rem, 2vw, 0.8rem);
             color: #aaa;
         }
         
@@ -425,11 +425,13 @@
                     fuelCanFrequency: 0.08,
                     duneHeight: 1.2,
                     targetName: 'محطة البنزين',
-                    skyColors: { top: 0x87CEEB, bottom: 0xFFE4B5 },
+                    skyColors: { top: 0x87CEEB, horizon: 0xFFE4B5, bottom: 0xDEB887 },
                     fogColor: 0xD4C4A8,
                     fogNear: 15,
                     fogFar: 80,
-                    sunIntensity: 1.2
+                    sunIntensity: 1.2,
+                    cloudColor: 0xffffff,
+                    mountainColor: 0xC4A484
                 },
                 {
                     name: 'المرحلة الثانية - العصر',
@@ -440,11 +442,13 @@
                     fuelCanFrequency: 0.07,
                     duneHeight: 1.5,
                     targetName: 'محطة البنزين',
-                    skyColors: { top: 0xFF8C00, bottom: 0xFFD700 },
+                    skyColors: { top: 0xFF6B35, horizon: 0xFFD700, bottom: 0xDEB887 },
                     fogColor: 0xC9A86C,
                     fogNear: 12,
                     fogFar: 70,
-                    sunIntensity: 1.5
+                    sunIntensity: 1.5,
+                    cloudColor: 0xffccaa,
+                    mountainColor: 0x8B6914
                 },
                 {
                     name: 'المرحلة الثالثة - الليل',
@@ -455,11 +459,13 @@
                     fuelCanFrequency: 0.06,
                     duneHeight: 1.3,
                     targetName: 'المخيم الصحراوي',
-                    skyColors: { top: 0x0a0a20, bottom: 0x1a1a3a },
+                    skyColors: { top: 0x0a0a20, horizon: 0x1a1a3a, bottom: 0x2a2a4a },
                     fogColor: 0x151525,
                     fogNear: 10,
                     fogFar: 50,
-                    sunIntensity: 0.1
+                    sunIntensity: 0.1,
+                    cloudColor: 0x333355,
+                    mountainColor: 0x1a1a2a
                 }
             ],
             vehicle: {
@@ -473,7 +479,7 @@
                 terrainFollowSpeed: 0.2
             },
             camera: {
-                rotationDuration: 3.5 // seconds for 360 rotation
+                rotationDuration: 3.5
             }
         };
         
@@ -628,101 +634,58 @@
                 });
             }
             
+            // Simple celebration sound - just a pleasant ding
             playCelebration() {
                 if (!this.initialized) return;
                 
-                // Triumphant fanfare
-                const notes = [
-                    { freq: 523, time: 0, dur: 0.15 },      // C5
-                    { freq: 659, time: 0.12, dur: 0.15 },   // E5
-                    { freq: 784, time: 0.24, dur: 0.15 },   // G5
-                    { freq: 1047, time: 0.36, dur: 0.4 },   // C6 (held)
-                    { freq: 784, time: 0.6, dur: 0.15 },    // G5
-                    { freq: 1047, time: 0.75, dur: 0.5 },   // C6 (final)
-                ];
+                // Simple pleasant chime - 2 notes only
+                const osc1 = this.ctx.createOscillator();
+                osc1.type = 'sine';
+                osc1.frequency.value = 880; // A5
                 
-                notes.forEach(note => {
-                    const osc = this.ctx.createOscillator();
-                    osc.type = 'sine';
-                    osc.frequency.value = note.freq;
-                    
-                    const gain = this.ctx.createGain();
-                    gain.gain.value = 0;
-                    gain.gain.setTargetAtTime(0.25, this.ctx.currentTime + note.time, 0.02);
-                    gain.gain.setTargetAtTime(0, this.ctx.currentTime + note.time + note.dur, 0.1);
-                    
-                    osc.connect(gain);
-                    gain.connect(this.masterGain);
-                    osc.start(this.ctx.currentTime + note.time);
-                    osc.stop(this.ctx.currentTime + note.time + note.dur + 0.2);
-                });
+                const gain1 = this.ctx.createGain();
+                gain1.gain.value = 0;
+                gain1.gain.setTargetAtTime(0.3, this.ctx.currentTime, 0.01);
+                gain1.gain.setTargetAtTime(0, this.ctx.currentTime + 0.3, 0.15);
                 
-                // Add sparkle effect
-                for (let i = 0; i < 8; i++) {
-                    const sparkle = this.ctx.createOscillator();
-                    sparkle.type = 'sine';
-                    sparkle.frequency.value = 2000 + Math.random() * 2000;
-                    
-                    const sGain = this.ctx.createGain();
-                    sGain.gain.value = 0;
-                    const startTime = this.ctx.currentTime + 0.3 + i * 0.1;
-                    sGain.gain.setTargetAtTime(0.08, startTime, 0.01);
-                    sGain.gain.setTargetAtTime(0, startTime + 0.05, 0.02);
-                    
-                    sparkle.connect(sGain);
-                    sGain.connect(this.masterGain);
-                    sparkle.start(startTime);
-                    sparkle.stop(startTime + 0.15);
-                }
+                osc1.connect(gain1);
+                gain1.connect(this.masterGain);
+                osc1.start();
+                osc1.stop(this.ctx.currentTime + 0.5);
+                
+                // Second higher note
+                const osc2 = this.ctx.createOscillator();
+                osc2.type = 'sine';
+                osc2.frequency.value = 1320; // E6
+                
+                const gain2 = this.ctx.createGain();
+                gain2.gain.value = 0;
+                gain2.gain.setTargetAtTime(0.25, this.ctx.currentTime + 0.15, 0.01);
+                gain2.gain.setTargetAtTime(0, this.ctx.currentTime + 0.5, 0.2);
+                
+                osc2.connect(gain2);
+                gain2.connect(this.masterGain);
+                osc2.start(this.ctx.currentTime + 0.15);
+                osc2.stop(this.ctx.currentTime + 0.8);
             }
             
             playDefeat() {
                 if (!this.initialized) return;
                 
-                // Sad descending tones
-                const notes = [
-                    { freq: 400, time: 0, dur: 0.3 },
-                    { freq: 350, time: 0.25, dur: 0.3 },
-                    { freq: 300, time: 0.5, dur: 0.3 },
-                    { freq: 250, time: 0.75, dur: 0.5 },
-                ];
+                // Simple sad descending tone
+                const osc = this.ctx.createOscillator();
+                osc.type = 'triangle';
+                osc.frequency.value = 400;
+                osc.frequency.setTargetAtTime(200, this.ctx.currentTime, 0.4);
                 
-                notes.forEach(note => {
-                    const osc = this.ctx.createOscillator();
-                    osc.type = 'triangle';
-                    osc.frequency.value = note.freq;
-                    
-                    const gain = this.ctx.createGain();
-                    gain.gain.value = 0;
-                    gain.gain.setTargetAtTime(0.2, this.ctx.currentTime + note.time, 0.02);
-                    gain.gain.setTargetAtTime(0, this.ctx.currentTime + note.time + note.dur, 0.15);
-                    
-                    osc.connect(gain);
-                    gain.connect(this.masterGain);
-                    osc.start(this.ctx.currentTime + note.time);
-                    osc.stop(this.ctx.currentTime + note.time + note.dur + 0.3);
-                });
+                const gain = this.ctx.createGain();
+                gain.gain.value = 0.25;
+                gain.gain.setTargetAtTime(0, this.ctx.currentTime + 0.8, 0.2);
                 
-                // Add low rumble
-                const noise = this.ctx.createBufferSource();
-                const noiseBuffer = this.ctx.createBuffer(1, this.ctx.sampleRate * 1.5, this.ctx.sampleRate);
-                const noiseData = noiseBuffer.getChannelData(0);
-                for (let i = 0; i < noiseData.length; i++) {
-                    noiseData[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / noiseData.length, 0.5);
-                }
-                noise.buffer = noiseBuffer;
-                
-                const noiseFilter = this.ctx.createBiquadFilter();
-                noiseFilter.type = 'lowpass';
-                noiseFilter.frequency.value = 150;
-                
-                const noiseGain = this.ctx.createGain();
-                noiseGain.gain.value = 0.15;
-                
-                noise.connect(noiseFilter);
-                noiseFilter.connect(noiseGain);
-                noiseGain.connect(this.masterGain);
-                noise.start();
+                osc.connect(gain);
+                gain.connect(this.masterGain);
+                osc.start();
+                osc.stop(this.ctx.currentTime + 1.2);
             }
         }
         
@@ -744,7 +707,7 @@
             lastCollisionTime: 0,
             cameraRotating: false,
             cameraRotationStart: 0,
-            cameraRotationType: null, // 'win' or 'lose'
+            cameraRotationType: null,
             showNextButton: false
         };
         
@@ -755,6 +718,8 @@
         let fuelCans = [];
         let decorations = [];
         let stars = [];
+        let clouds = [];
+        let mountains = [];
         let dustParticles;
         let goalMarker;
         const audio = new AudioSystem();
@@ -858,6 +823,90 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // ============= SKY ENVIRONMENT =============
+        function createMountains() {
+            const level = CONFIG.levels[state.currentLevel];
+            const group = new THREE.Group();
+            
+            // Create mountain range in the distance
+            const mountainCount = 15;
+            for (let i = 0; i < mountainCount; i++) {
+                const width = 80 + Math.random() * 120;
+                const height = 30 + Math.random() * 50;
+                const geom = new THREE.ConeGeometry(width / 2, height, 4);
+                const mat = new THREE.MeshBasicMaterial({ 
+                    color: level.mountainColor,
+                    transparent: true,
+                    opacity: 0.6,
+                    fog: true
+                });
+                const mountain = new THREE.Mesh(geom, mat);
+                
+                const angle = (i / mountainCount) * Math.PI * 2;
+                const distance = 400 + Math.random() * 100;
+                mountain.position.set(
+                    Math.sin(angle) * distance,
+                    height / 2 - 10,
+                    Math.cos(angle) * distance
+                );
+                mountain.rotation.y = Math.random() * Math.PI;
+                group.add(mountain);
+            }
+            
+            return group;
+        }
+        
+        function createClouds() {
+            const level = CONFIG.levels[state.currentLevel];
+            const group = new THREE.Group();
+            
+            const cloudCount = 20;
+            for (let i = 0; i < cloudCount; i++) {
+                const cloudGroup = new THREE.Group();
+                
+                // Create fluffy cloud from multiple spheres
+                const puffCount = 5 + Math.floor(Math.random() * 5);
+                for (let j = 0; j < puffCount; j++) {
+                    const size = 15 + Math.random() * 25;
+                    const geom = new THREE.SphereGeometry(size, 8, 8);
+                    const mat = new THREE.MeshBasicMaterial({
+                        color: level.cloudColor,
+                        transparent: true,
+                        opacity: level.timeOfDay === 'night' ? 0.3 : 0.7,
+                        fog: false
+                    });
+                    const puff = new THREE.Mesh(geom, mat);
+                    puff.position.set(
+                        (Math.random() - 0.5) * size * 2,
+                        (Math.random() - 0.5) * size * 0.5,
+                        (Math.random() - 0.5) * size * 2
+                    );
+                    puff.scale.y = 0.4 + Math.random() * 0.3;
+                    cloudGroup.add(puff);
+                }
+                
+                // Position cloud in sky
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 200 + Math.random() * 300;
+                const height = 80 + Math.random() * 60;
+                cloudGroup.position.set(
+                    Math.sin(angle) * distance,
+                    height,
+                    Math.cos(angle) * distance
+                );
+                
+                cloudGroup.userData = {
+                    speed: 0.5 + Math.random() * 1,
+                    originalX: cloudGroup.position.x,
+                    originalZ: cloudGroup.position.z
+                };
+                
+                group.add(cloudGroup);
+            }
+            
+            return group;
         }
         
         // ============= TOYOTA LAND CRUISER 70 PICKUP =============
@@ -994,11 +1043,71 @@
                 group.add(sideWall);
             });
             
+            // Tailgate
             const tailgateGeom = new THREE.BoxGeometry(1.9, 0.5, 0.08);
             const tailgate = new THREE.Mesh(tailgateGeom, bedWallMat);
             tailgate.position.set(0, 1.15, -2.5);
             tailgate.castShadow = true;
             group.add(tailgate);
+            
+            // === TOYOTA TEXT ON TAILGATE ===
+            // Create TOYOTA letters using boxes
+            const letterMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5 });
+            const letterHeight = 0.12;
+            const letterDepth = 0.03;
+            
+            // T
+            const t1 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, letterDepth), letterMat);
+            t1.position.set(-0.55, 1.2, -2.54);
+            group.add(t1);
+            const t2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
+            t2.position.set(-0.55, 1.13, -2.54);
+            group.add(t2);
+            
+            // O
+            const oGeom = new THREE.TorusGeometry(0.05, 0.015, 8, 16);
+            const o1 = new THREE.Mesh(oGeom, letterMat);
+            o1.position.set(-0.35, 1.14, -2.54);
+            group.add(o1);
+            
+            // Y
+            const y1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, letterDepth), letterMat);
+            y1.position.set(-0.18, 1.18, -2.54);
+            y1.rotation.z = 0.4;
+            group.add(y1);
+            const y2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, letterDepth), letterMat);
+            y2.position.set(-0.12, 1.18, -2.54);
+            y2.rotation.z = -0.4;
+            group.add(y2);
+            const y3 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.07, letterDepth), letterMat);
+            y3.position.set(-0.15, 1.08, -2.54);
+            group.add(y3);
+            
+            // O
+            const o2 = new THREE.Mesh(oGeom, letterMat);
+            o2.position.set(0.05, 1.14, -2.54);
+            group.add(o2);
+            
+            // T
+            const t3 = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, letterDepth), letterMat);
+            t3.position.set(0.25, 1.2, -2.54);
+            group.add(t3);
+            const t4 = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
+            t4.position.set(0.25, 1.13, -2.54);
+            group.add(t4);
+            
+            // A
+            const a1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
+            a1.position.set(0.42, 1.13, -2.54);
+            a1.rotation.z = 0.15;
+            group.add(a1);
+            const a2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
+            a2.position.set(0.50, 1.13, -2.54);
+            a2.rotation.z = -0.15;
+            group.add(a2);
+            const a3 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, letterDepth), letterMat);
+            a3.position.set(0.46, 1.12, -2.54);
+            group.add(a3);
             
             const bedFrontGeom = new THREE.BoxGeometry(1.9, 0.5, 0.08);
             const bedFront = new THREE.Mesh(bedFrontGeom, bedWallMat);
@@ -1008,7 +1117,6 @@
             // === CARGO ===
             group.cargo = [];
             
-            // Cargo bounds for invisible barrier
             const cargoBounds = {
                 minX: -0.75,
                 maxX: 0.75,
@@ -1103,12 +1211,12 @@
                 group.wheels.push(wheelGroup);
             });
             
-            // === HEADLIGHTS ===
+            // === HEADLIGHTS (Physical) ===
             const headlightGeom = new THREE.CylinderGeometry(0.15, 0.12, 0.1, 12);
             const headlightMat = new THREE.MeshStandardMaterial({ 
                 color: 0xffffee, 
                 emissive: 0xffffaa, 
-                emissiveIntensity: 0.3 
+                emissiveIntensity: 0.5 
             });
             
             [-0.65, 0.65].forEach(x => {
@@ -1118,15 +1226,23 @@
                 group.add(headlight);
             });
             
+            // === HEADLIGHT BEAMS (Much stronger for night) ===
             group.headlights = [];
             [-0.65, 0.65].forEach(x => {
-                const spotLight = new THREE.SpotLight(0xffffcc, 0, 60, 0.5, 0.5);
+                const spotLight = new THREE.SpotLight(0xffffcc, 0, 100, 0.6, 0.3);
                 spotLight.position.set(x, 1.0, 2.95);
-                spotLight.target.position.set(x, 0, 30);
+                spotLight.target.position.set(x, -2, 50);
+                spotLight.castShadow = true;
                 group.add(spotLight);
                 group.add(spotLight.target);
                 group.headlights.push(spotLight);
             });
+            
+            // Add extra front light for better visibility
+            const frontLight = new THREE.PointLight(0xffffcc, 0, 40);
+            frontLight.position.set(0, 1.5, 4);
+            group.add(frontLight);
+            group.frontLight = frontLight;
             
             // === TAIL LIGHTS ===
             const tailLightGeom = new THREE.BoxGeometry(0.2, 0.15, 0.05);
@@ -1173,21 +1289,18 @@
             const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
             
-            // Body
             const bodyGeom = new THREE.BoxGeometry(1.8, 0.8, 3.5);
             const body = new THREE.Mesh(bodyGeom, mat);
             body.position.y = 0.9;
             body.castShadow = true;
             group.add(body);
             
-            // Cabin frame
             const cabinGeom = new THREE.BoxGeometry(1.6, 0.8, 1.4);
             const cabin = new THREE.Mesh(cabinGeom, mat);
             cabin.position.set(0, 1.6, -0.3);
             cabin.castShadow = true;
             group.add(cabin);
             
-            // Wheels
             const wheelGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 12);
             [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]].forEach(pos => {
                 const wheel = new THREE.Mesh(wheelGeom, darkMat);
@@ -1196,7 +1309,6 @@
                 group.add(wheel);
             });
             
-            // Headlights
             const lightGeom = new THREE.SphereGeometry(0.12, 8, 8);
             const lightMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0x333300 });
             [-0.5, 0.5].forEach(x => {
@@ -1213,33 +1325,28 @@
             const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
             
-            // Cabin
             const cabinGeom = new THREE.BoxGeometry(1.9, 1.0, 1.8);
             const cabin = new THREE.Mesh(cabinGeom, mat);
             cabin.position.set(0, 1.2, 0.8);
             cabin.castShadow = true;
             group.add(cabin);
             
-            // Roof
             const roofGeom = new THREE.BoxGeometry(1.8, 0.15, 1.6);
             const roof = new THREE.Mesh(roofGeom, mat);
             roof.position.set(0, 1.8, 0.8);
             group.add(roof);
             
-            // Hood
             const hoodGeom = new THREE.BoxGeometry(1.9, 0.5, 1.2);
             const hood = new THREE.Mesh(hoodGeom, mat);
             hood.position.set(0, 0.9, 1.9);
             hood.castShadow = true;
             group.add(hood);
             
-            // Bed
             const bedGeom = new THREE.BoxGeometry(1.8, 0.1, 2.0);
             const bed = new THREE.Mesh(bedGeom, mat);
             bed.position.set(0, 0.75, -1.0);
             group.add(bed);
             
-            // Bed walls
             const wallGeom = new THREE.BoxGeometry(0.08, 0.4, 2.0);
             [-0.9, 0.9].forEach(x => {
                 const wall = new THREE.Mesh(wallGeom, mat);
@@ -1247,13 +1354,11 @@
                 group.add(wall);
             });
             
-            // Tailgate
             const tailGeom = new THREE.BoxGeometry(1.8, 0.4, 0.08);
             const tail = new THREE.Mesh(tailGeom, mat);
             tail.position.set(0, 0.95, -2.0);
             group.add(tail);
             
-            // Wheels
             const wheelGeom = new THREE.CylinderGeometry(0.45, 0.45, 0.3, 14);
             [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]].forEach(pos => {
                 const wheel = new THREE.Mesh(wheelGeom, darkMat);
@@ -1270,21 +1375,18 @@
             const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
             
-            // Cabin
             const cabinGeom = new THREE.BoxGeometry(2.0, 1.2, 1.5);
             const cabin = new THREE.Mesh(cabinGeom, mat);
             cabin.position.set(0, 1.3, 1.5);
             cabin.castShadow = true;
             group.add(cabin);
             
-            // Cargo area
             const cargoGeom = new THREE.BoxGeometry(2.0, 0.8, 3.0);
             const cargo = new THREE.Mesh(cargoGeom, mat);
             cargo.position.set(0, 1.0, -0.8);
             cargo.castShadow = true;
             group.add(cargo);
             
-            // Wheels (6 wheels for truck)
             const wheelGeom = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 14);
             [
                 [-1.0, 0.5, 1.8], [1.0, 0.5, 1.8],
@@ -1369,10 +1471,14 @@
             if (type === 'rock') {
                 const rockSize = 0.7 + Math.random() * 1.0;
                 const geom = new THREE.DodecahedronGeometry(rockSize, 1);
+                // Make rocks more visible at night
+                const rockColor = level.timeOfDay === 'night' ? 0x6a6a7a : 0x8B7355;
                 const mat = new THREE.MeshStandardMaterial({
-                    color: level.timeOfDay === 'night' ? 0x3a3a4a : 0x8B7355,
+                    color: rockColor,
                     roughness: 0.9,
-                    flatShading: true
+                    flatShading: true,
+                    emissive: level.timeOfDay === 'night' ? 0x222233 : 0x000000,
+                    emissiveIntensity: level.timeOfDay === 'night' ? 0.1 : 0
                 });
                 mesh = new THREE.Mesh(geom, mat);
                 
@@ -1386,7 +1492,7 @@
                 const holeSize = 1.0 + Math.random() * 0.6;
                 const geom = new THREE.CircleGeometry(holeSize, 16);
                 const mat = new THREE.MeshStandardMaterial({
-                    color: level.timeOfDay === 'night' ? 0x1a1a2a : 0x3a2a1a,
+                    color: level.timeOfDay === 'night' ? 0x0a0a15 : 0x3a2a1a,
                     roughness: 1
                 });
                 mesh = new THREE.Mesh(geom, mat);
@@ -1473,10 +1579,9 @@
             const group = new THREE.Group();
             const level = CONFIG.levels[state.currentLevel];
             
-            // BLACK tent for visibility
             const tentGeom = new THREE.ConeGeometry(2.5, 2.2, 4);
             const tentMat = new THREE.MeshStandardMaterial({ 
-                color: 0x1a1a1a, // Black color
+                color: 0x1a1a1a,
                 roughness: 0.9,
                 side: THREE.DoubleSide
             });
@@ -1548,17 +1653,14 @@
                 group.add(light);
             }
             
-            // Palm trees
             [-14, 14].forEach(px => {
                 const palm = createPalmTree(px, 0);
                 palm.position.y = 0;
                 group.add(palm);
             });
             
-            // Parked vehicles around station
             const vehicleColors = [0xffffff, 0x4a4a4a, 0x8B4513, 0x1a3d5c, 0x5c1a1a];
             
-            // Left side vehicles
             const jeep1 = createOldJeep(vehicleColors[0]);
             jeep1.position.set(-12, 0, -5);
             jeep1.rotation.y = Math.PI / 6;
@@ -1569,7 +1671,6 @@
             pickup1.rotation.y = -Math.PI / 8;
             group.add(pickup1);
             
-            // Right side vehicles
             const jeep2 = createOldJeep(vehicleColors[2]);
             jeep2.position.set(12, 0, -4);
             jeep2.rotation.y = -Math.PI / 5;
@@ -1587,10 +1688,9 @@
         function createCamp(z) {
             const group = new THREE.Group();
             
-            // Main tent (BLACK)
             const mainTentGeom = new THREE.ConeGeometry(4.5, 3.5, 6);
             const mainTentMat = new THREE.MeshStandardMaterial({ 
-                color: 0x1a1a1a, // Black
+                color: 0x1a1a1a,
                 roughness: 0.9,
                 side: THREE.DoubleSide
             });
@@ -1600,21 +1700,18 @@
             mainTent.castShadow = true;
             group.add(mainTent);
             
-            // Side tents (BLACK)
             [[-9, 4], [9, 3], [-7, -5], [7, -4]].forEach(([tx, tz]) => {
                 const tent = createTent(tx, tz);
                 tent.position.y = 0;
                 group.add(tent);
             });
             
-            // Palm trees
             [[-16, 0], [16, 0], [0, -10], [-11, 7], [11, 7]].forEach(([px, pz]) => {
                 const palm = createPalmTree(px, pz);
                 palm.position.y = 0;
                 group.add(palm);
             });
             
-            // Central bonfire
             const fireLight = new THREE.PointLight(0xff6600, 6, 30);
             fireLight.position.set(0, 1.5, 9);
             group.add(fireLight);
@@ -1625,7 +1722,6 @@
             fire.position.set(0, 0.75, 9);
             group.add(fire);
             
-            // Welcome arch
             const archGeom = new THREE.TorusGeometry(3.5, 0.25, 8, 16, Math.PI);
             const archMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
             const arch = new THREE.Mesh(archGeom, archMat);
@@ -1640,10 +1736,8 @@
                 group.add(pole);
             });
             
-            // Parked vehicles around camp
             const vehicleColors = [0xffffff, 0x4a4a4a, 0x8B4513, 0x1a3d5c, 0xd4b896, 0x2a4a2a];
             
-            // Left side
             const jeep1 = createOldJeep(vehicleColors[0]);
             jeep1.position.set(-18, 0, -3);
             jeep1.rotation.y = Math.PI / 4;
@@ -1659,7 +1753,6 @@
             truck1.rotation.y = -Math.PI / 8;
             group.add(truck1);
             
-            // Right side
             const jeep2 = createOldJeep(vehicleColors[2]);
             jeep2.position.set(18, 0, -2);
             jeep2.rotation.y = -Math.PI / 3;
@@ -1749,6 +1842,8 @@
             fuelCans.forEach(f => scene.remove(f));
             decorations.forEach(d => scene.remove(d));
             stars.forEach(s => scene.remove(s));
+            clouds.forEach(c => scene.remove(c));
+            mountains.forEach(m => scene.remove(m));
             if (dustParticles) {
                 if (dustParticles.parent) dustParticles.parent.remove(dustParticles);
                 scene.remove(dustParticles);
@@ -1760,6 +1855,8 @@
             fuelCans = [];
             decorations = [];
             stars = [];
+            clouds = [];
+            mountains = [];
             
             const level = CONFIG.levels[state.currentLevel];
             
@@ -1768,7 +1865,7 @@
             
             scene.children = scene.children.filter(c => !(c instanceof THREE.Light) || c.parent === vehicle);
             
-            const ambientLight = new THREE.AmbientLight(0xffffff, level.timeOfDay === 'night' ? 0.15 : 0.5);
+            const ambientLight = new THREE.AmbientLight(0xffffff, level.timeOfDay === 'night' ? 0.2 : 0.5);
             scene.add(ambientLight);
             
             const sunLight = new THREE.DirectionalLight(
@@ -1786,6 +1883,16 @@
             sunLight.shadow.camera.top = 60;
             sunLight.shadow.camera.bottom = -60;
             scene.add(sunLight);
+            
+            // Add mountains
+            const mountainGroup = createMountains();
+            mountains.push(mountainGroup);
+            scene.add(mountainGroup);
+            
+            // Add clouds
+            const cloudGroup = createClouds();
+            clouds.push(cloudGroup);
+            scene.add(cloudGroup);
             
             const numChunks = Math.ceil((level.distance + 200) / TERRAIN_CHUNK_SIZE) + 3;
             for (let i = 0; i < numChunks; i++) {
@@ -1833,7 +1940,15 @@
                 stars.push(starField);
                 scene.add(starField);
                 
-                vehicle.headlights.forEach(light => { light.intensity = 5; });
+                // Much stronger headlights for night
+                vehicle.headlights.forEach(light => { 
+                    light.intensity = 15; 
+                    light.distance = 100;
+                });
+                if (vehicle.frontLight) {
+                    vehicle.frontLight.intensity = 8;
+                    vehicle.frontLight.distance = 50;
+                }
                 
                 const moonGeom = new THREE.SphereGeometry(10, 16, 16);
                 const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffee });
@@ -1847,6 +1962,9 @@
                 scene.add(moonLight);
             } else {
                 vehicle.headlights.forEach(light => { light.intensity = 0; });
+                if (vehicle.frontLight) {
+                    vehicle.frontLight.intensity = 0;
+                }
             }
             
             dustParticles = createDustParticles();
@@ -2028,8 +2146,7 @@
                     const newY = item.position.y + item.userData.velocity.y * delta;
                     const newZ = item.position.z + item.userData.velocity.z * delta;
                     
-                    // Invisible barrier - bounce back before reaching edge
-                    const margin = 0.15; // Buffer before actual edge
+                    const margin = 0.15;
                     
                     if (newX < bounds.minX + margin) {
                         item.userData.velocity.x = Math.abs(item.userData.velocity.x) * 0.5;
@@ -2047,7 +2164,6 @@
                         item.position.z = newZ;
                     }
                     
-                    // Check if should fall off (only if velocity is very high)
                     const totalVelocity = item.userData.velocity.length();
                     if (totalVelocity > 8 && (newY > 2.2 || newX < bounds.minX - 0.3 || newX > bounds.maxX + 0.3)) {
                         const worldPos = new THREE.Vector3();
@@ -2118,6 +2234,22 @@
             dustParticles.geometry.attributes.position.needsUpdate = true;
         }
         
+        // ============= UPDATE CLOUDS =============
+        function updateClouds(delta) {
+            clouds.forEach(cloudGroup => {
+                cloudGroup.children.forEach(cloud => {
+                    if (cloud.userData && cloud.userData.speed) {
+                        cloud.position.x += cloud.userData.speed * delta;
+                        
+                        // Wrap around
+                        if (cloud.position.x > 500) {
+                            cloud.position.x = -500;
+                        }
+                    }
+                });
+            });
+        }
+        
         // ============= CAMERA ROTATION =============
         function updateCameraRotation(delta) {
             if (!state.cameraRotating) return;
@@ -2126,7 +2258,6 @@
             const duration = CONFIG.camera.rotationDuration;
             const progress = Math.min(elapsed / duration, 1);
             
-            // Full 360 degree rotation
             const angle = progress * Math.PI * 2;
             const radius = 18;
             const height = vehicle.position.y + 6;
@@ -2171,17 +2302,17 @@
             
             const delta = Math.min(clock.getDelta(), 0.05);
             
-            // Handle camera rotation animation
+            // Update clouds always
+            updateClouds(delta);
+            
             if (state.cameraRotating) {
                 updateCameraRotation(delta);
                 
-                // Animate fuel cans even during rotation
                 fuelCans.forEach(can => {
                     can.rotation.y += delta * 2;
                     can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + Math.sin(Date.now() * 0.003) * 0.15;
                 });
                 
-                // Stars twinkle
                 const level = CONFIG.levels[state.currentLevel];
                 if (level.timeOfDay === 'night' && stars[0]) {
                     stars[0].material.opacity = 0.6 + Math.sin(Date.now() * 0.003) * 0.3;
@@ -2198,10 +2329,8 @@
             
             const level = CONFIG.levels[state.currentLevel];
             
-            // Steering
             state.steering += (state.targetSteering - state.steering) * (1 - CONFIG.vehicle.steeringDamping);
             
-            // Movement
             const speed = CONFIG.vehicle.speed;
             vehicle.position.z += speed * delta;
             state.distance = vehicle.position.z;
@@ -2209,7 +2338,6 @@
             vehicle.position.x += state.steering * speed * delta;
             vehicle.position.x = Math.max(-25, Math.min(25, vehicle.position.x));
             
-            // Terrain following
             const targetHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z) + CONFIG.vehicle.groundOffset;
             
             if (!state.isGrounded) {
@@ -2233,7 +2361,6 @@
             
             vehicle.position.y = state.vehicleY;
             
-            // Terrain tilt
             const frontHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z + 2);
             const backHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z - 2);
             const terrainPitch = Math.atan2(frontHeight - backHeight, 4);
@@ -2242,23 +2369,27 @@
             vehicle.rotation.y = state.steering * 0.3;
             vehicle.rotation.x = -terrainPitch * 0.6;
             
-            // Wheels
             vehicle.wheels.forEach(wheel => {
                 wheel.children[0].rotation.x += speed * delta * 2;
                 wheel.children[1].rotation.x += speed * delta * 2;
             });
             
-            // Camera follow
             camera.position.x = vehicle.position.x * 0.3;
             camera.position.y = vehicle.position.y + 7;
             camera.position.z = vehicle.position.z - 14;
             camera.lookAt(vehicle.position.x * 0.5, vehicle.position.y + 2, vehicle.position.z + 18);
             
-            // Update systems
+            // Move mountains and clouds with camera (parallax)
+            mountains.forEach(m => {
+                m.position.z = vehicle.position.z;
+            });
+            clouds.forEach(c => {
+                c.position.z = vehicle.position.z;
+            });
+            
             updateDustParticles(delta);
             updateCargo(delta);
             
-            // Animate fuel cans
             fuelCans.forEach(can => {
                 can.rotation.y += delta * 2;
                 can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + Math.sin(Date.now() * 0.003) * 0.15;
@@ -2267,29 +2398,23 @@
                 }
             });
             
-            // Stars twinkle
             if (level.timeOfDay === 'night' && stars[0]) {
                 stars[0].material.opacity = 0.6 + Math.sin(Date.now() * 0.003) * 0.3;
             }
             
-            // Fuel consumption
             state.fuel -= level.fuelConsumption * delta * 60;
             
-            // Collisions
             checkCollisions();
             
-            // Audio
             audio.updateEngine(speed, state.steering);
             
-            // HUD
             updateHUD();
             
-            // Win condition (3 meters before goal)
-            if (state.distance >= level.distance - 3) {
+            // Win condition - 1 meter before goal
+            if (state.distance >= level.distance - 1) {
                 completeLevel();
             }
             
-            // Lose condition
             if (state.fuel <= 0) {
                 gameOver(false);
             }
@@ -2304,7 +2429,6 @@
             audio.playCelebration();
             hud.style.display = 'none';
             
-            // Start camera rotation
             state.cameraRotating = true;
             state.cameraRotationStart = Date.now();
             
