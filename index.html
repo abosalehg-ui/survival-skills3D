@@ -889,7 +889,31 @@
         }
     }
     </script>
-    
+
+    <!-- Diagnostic error display (shows JS errors on screen) -->
+    <div id="errorDisplay" style="display:none; position:fixed; top:0; left:0; right:0; background:#c0392b; color:#fff; padding:14px; z-index:9999; font-family:monospace; font-size:0.85rem; max-height:60vh; overflow:auto; direction:ltr; text-align:left; white-space:pre-wrap;"></div>
+    <script>
+        // Global error handlers - show errors on screen so we can diagnose
+        (function() {
+            function showErr(msg, src, line, col, err) {
+                var div = document.getElementById('errorDisplay');
+                if (!div) return;
+                div.style.display = 'block';
+                var text = '⚠ JS ERROR:\n' + (msg || '(no message)');
+                if (src) text += '\n  at ' + src + ':' + line + ':' + col;
+                if (err && err.stack) text += '\n' + err.stack;
+                div.textContent = (div.textContent ? div.textContent + '\n\n' : '') + text;
+                console.error('CAUGHT:', msg, err);
+            }
+            window.addEventListener('error', function(e) {
+                showErr(e.message, e.filename, e.lineno, e.colno, e.error);
+            });
+            window.addEventListener('unhandledrejection', function(e) {
+                showErr('Unhandled promise: ' + (e.reason && e.reason.message || e.reason), '', 0, 0, e.reason);
+            });
+        })();
+    </script>
+
     <script type="module">
         import * as THREE from 'three';
         
@@ -4844,17 +4868,40 @@
         playAgainBtn.addEventListener('click', playAgain);
 
         // ============= INITIALIZE =============
-        SaveSystem.load();
-        state.pendingVehicleId = SaveSystem.data.vehicles.selectedId || 'landCruiser';
-        initBackgroundCanvas();
-        initGame();
-        applyQualityFromSettings();
-        setupControls();
-        gameLoop();
-
-        // Show tutorial on first launch
-        if (!SaveSystem.data.tutorialShown) {
-            setTimeout(() => showModal(tutorialModal), 600);
+        function diag(step) {
+            try {
+                const d = document.getElementById('errorDisplay');
+                if (d && d.dataset) d.dataset.step = step;
+                console.log('[init]', step);
+            } catch(e) {}
+        }
+        try {
+            diag('1: SaveSystem.load');
+            SaveSystem.load();
+            diag('2: pendingVehicleId');
+            state.pendingVehicleId = SaveSystem.data.vehicles.selectedId || 'landCruiser';
+            diag('3: initBackgroundCanvas');
+            initBackgroundCanvas();
+            diag('4: initGame');
+            initGame();
+            diag('5: applyQualityFromSettings');
+            applyQualityFromSettings();
+            diag('6: setupControls');
+            setupControls();
+            diag('7: gameLoop');
+            gameLoop();
+            diag('8: tutorial check');
+            if (!SaveSystem.data.tutorialShown) {
+                setTimeout(() => showModal(tutorialModal), 600);
+            }
+            diag('9: DONE');
+        } catch (initErr) {
+            const div = document.getElementById('errorDisplay');
+            if (div) {
+                div.style.display = 'block';
+                div.textContent = '⚠ Init failed at step: ' + (div.dataset.step || '?') + '\n' + initErr.message + '\n' + (initErr.stack || '');
+            }
+            console.error('Init failed:', initErr);
         }
     </script>
 </body>
