@@ -337,340 +337,6 @@
             0%, 100% { opacity: 0.3; transform: scaleY(1); }
             50% { opacity: 0.5; transform: scaleY(1.05); }
         }
-
-        /* ============= HP BAR ============= */
-        .hp-container {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-top: 8px;
-        }
-        .hp-icon { font-size: clamp(1rem, 3vw, 1.3rem); }
-        .hp-bar {
-            width: clamp(80px, 20vw, 120px);
-            height: clamp(10px, 2.4vw, 14px);
-            background: rgba(255,255,255,0.2);
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        .hp-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #ff4444, #ffaa00, #44ff44);
-            border-radius: 10px;
-            transition: width 0.3s ease;
-        }
-
-        /* ============= PAUSE BUTTON ============= */
-        #pauseBtn {
-            position: fixed;
-            top: 12px;
-            left: 12px;
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: rgba(0,0,0,0.55);
-            backdrop-filter: blur(10px);
-            border: 2px solid rgba(255,255,255,0.3);
-            color: #fff;
-            font-size: 1.3rem;
-            cursor: pointer;
-            z-index: 110;
-            display: none;
-            justify-content: center;
-            align-items: center;
-            pointer-events: auto;
-            font-family: inherit;
-            transition: transform 0.15s ease;
-        }
-        #pauseBtn:active { transform: scale(0.92); }
-
-        /* ============= HUD POWERUP/SANDSTORM BADGES ============= */
-        #effectBadges {
-            position: fixed;
-            top: 70px;
-            right: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            z-index: 105;
-            pointer-events: none;
-        }
-        .effect-badge {
-            background: rgba(0,0,0,0.6);
-            color: #fff;
-            padding: 5px 10px;
-            border-radius: 14px;
-            font-size: clamp(0.65rem, 2vw, 0.85rem);
-            backdrop-filter: blur(8px);
-            border: 1px solid rgba(255,255,255,0.18);
-            white-space: nowrap;
-        }
-        .effect-badge.boost { background: rgba(255, 200, 0, 0.6); }
-        .effect-badge.shield { background: rgba(0, 200, 255, 0.6); }
-        .effect-badge.fuel { background: rgba(0, 180, 80, 0.6); }
-        .effect-badge.storm { background: rgba(180, 100, 50, 0.7); }
-
-        /* ============= ACHIEVEMENT TOAST ============= */
-        #achievementToast {
-            position: fixed;
-            top: 80px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: linear-gradient(135deg, #d4a574 0%, #8b5a2b 100%);
-            color: #fff;
-            padding: 14px 26px;
-            border-radius: 14px;
-            font-size: 1rem;
-            font-weight: bold;
-            z-index: 2000;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-            display: none;
-            animation: popIn 0.4s ease;
-            text-align: center;
-        }
-
-        /* ============= TIMER (Time Trial) ============= */
-        .timer-info { text-align: left; }
-        .timer-name { font-size: clamp(0.65rem, 2.2vw, 0.9rem); color: #ffd700; }
-        .timer-value { font-size: clamp(0.8rem, 2.6vw, 1.1rem); font-weight: bold; }
-        .timer-value.warning { color: #ff6644; animation: celebratePulse 0.5s ease-in-out infinite alternate; }
-
-        /* ============= MODAL BASE ============= */
-        .modal {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0,0,0,0.85);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            z-index: 1500;
-            color: #fff;
-            padding: 20px;
-            overflow-y: auto;
-        }
-        .modal-card {
-            background: linear-gradient(180deg, #2a1a0a 0%, #3d2810 100%);
-            border-radius: 20px;
-            padding: 28px 24px;
-            max-width: 500px;
-            width: 100%;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
-            text-align: center;
-        }
-        .modal-title {
-            font-size: clamp(1.4rem, 5vw, 2rem);
-            margin-bottom: 18px;
-            color: #ffd700;
-        }
-        .modal-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 0;
-            border-bottom: 1px solid rgba(255,255,255,0.08);
-            gap: 12px;
-        }
-        .modal-row:last-child { border-bottom: none; }
-        .modal-label {
-            font-size: clamp(0.85rem, 2.5vw, 1rem);
-            color: #d4a574;
-            min-width: 80px;
-            text-align: right;
-        }
-        .modal-row input[type="range"] {
-            flex: 1;
-            accent-color: #d4a574;
-            height: 6px;
-            cursor: pointer;
-        }
-        .modal-row select {
-            background: #1a0f00;
-            color: #fff;
-            border: 1px solid #8b5a2b;
-            padding: 6px 10px;
-            border-radius: 6px;
-            font-family: inherit;
-        }
-        .modal-row .toggle-btn {
-            background: #4a3520;
-            color: #d4a574;
-            border: 1px solid #8b5a2b;
-            padding: 6px 14px;
-            border-radius: 18px;
-            font-family: inherit;
-            font-size: 0.9rem;
-            cursor: pointer;
-        }
-        .modal-row .toggle-btn.active {
-            background: linear-gradient(135deg, #d4a574 0%, #8b5a2b 100%);
-            color: #fff;
-        }
-        .modal-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: center;
-            flex-wrap: wrap;
-            margin-top: 20px;
-        }
-        .modal-btn {
-            background: linear-gradient(135deg, #d4a574 0%, #8b5a2b 100%);
-            border: none;
-            padding: 10px 24px;
-            font-size: 1rem;
-            color: #fff;
-            border-radius: 30px;
-            cursor: pointer;
-            font-family: inherit;
-            transition: transform 0.2s ease;
-        }
-        .modal-btn:active { transform: scale(0.96); }
-        .modal-btn.secondary {
-            background: rgba(255,255,255,0.08);
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-        .modal-btn.danger {
-            background: linear-gradient(135deg, #c0392b 0%, #7a1f15 100%);
-        }
-
-        /* ============= VEHICLE / MODE SELECT ============= */
-        .selection-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 12px;
-            margin: 18px 0;
-        }
-        .selection-card {
-            background: rgba(0,0,0,0.4);
-            border: 2px solid transparent;
-            border-radius: 14px;
-            padding: 14px 10px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            text-align: center;
-        }
-        .selection-card.locked {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        .selection-card.selected {
-            border-color: #ffd700;
-            background: rgba(255, 215, 0, 0.12);
-            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
-        }
-        .selection-icon {
-            font-size: 2.2rem;
-            margin-bottom: 6px;
-        }
-        .selection-name {
-            font-size: clamp(0.85rem, 2.5vw, 1rem);
-            font-weight: bold;
-            margin-bottom: 6px;
-        }
-        .selection-desc {
-            font-size: clamp(0.7rem, 2vw, 0.8rem);
-            color: #aaa;
-            margin-bottom: 8px;
-        }
-        .stat-bars { text-align: right; font-size: 0.72rem; }
-        .stat-bar-row {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            margin: 2px 0;
-        }
-        .stat-bar-label { width: 50px; color: #d4a574; }
-        .stat-bar-track {
-            flex: 1;
-            height: 6px;
-            background: rgba(255,255,255,0.15);
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .stat-bar-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #d4a574, #ffd700);
-        }
-
-        /* ============= TUTORIAL ============= */
-        .tutorial-list {
-            text-align: right;
-            font-size: clamp(0.85rem, 2.6vw, 1rem);
-            line-height: 1.9;
-            padding: 0 10px;
-        }
-        .tutorial-list li {
-            list-style: none;
-            margin: 6px 0;
-        }
-
-        /* ============= ACHIEVEMENTS ============= */
-        .achievement-list {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 8px;
-            text-align: right;
-            margin: 14px 0;
-            max-height: 50vh;
-            overflow-y: auto;
-        }
-        .achievement-item {
-            background: rgba(0,0,0,0.35);
-            padding: 10px 12px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            opacity: 0.45;
-        }
-        .achievement-item.unlocked { opacity: 1; background: rgba(255, 215, 0, 0.08); }
-        .achievement-icon { font-size: 1.6rem; }
-        .achievement-info { flex: 1; }
-        .achievement-name { font-weight: bold; font-size: 0.95rem; }
-        .achievement-desc { font-size: 0.75rem; color: #aaa; }
-
-        /* ============= BEST SCORES ============= */
-        .best-score {
-            margin-top: 10px;
-            font-size: 0.85rem;
-            color: #ffd700;
-        }
-
-        /* ============= SANDSTORM OVERLAY ============= */
-        #sandstormOverlay {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%;
-            height: 100%;
-            background: radial-gradient(ellipse at center, transparent 30%, rgba(180, 130, 70, 0.45) 100%);
-            pointer-events: none;
-            z-index: 49;
-            display: none;
-            animation: stormFlicker 4s ease-in-out infinite;
-        }
-        @keyframes stormFlicker {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 0.9; }
-        }
-
-        /* ============= SHIELD VISUAL ============= */
-        #shieldVisual {
-            position: fixed;
-            bottom: 0; left: 0;
-            width: 100%; height: 40%;
-            border: 3px solid rgba(0, 200, 255, 0.5);
-            border-radius: 50% 50% 0 0 / 100% 100% 0 0;
-            pointer-events: none;
-            z-index: 48;
-            display: none;
-            box-shadow: inset 0 0 80px rgba(0, 200, 255, 0.3);
-            animation: shieldPulse 1.5s ease-in-out infinite;
-        }
-        @keyframes shieldPulse {
-            0%, 100% { opacity: 0.7; }
-            50% { opacity: 1; }
-        }
     </style>
 </head>
 <body>
@@ -681,11 +347,6 @@
             <h1 class="game-title">🏜️ النجاة في الصحراء</h1>
             <p class="subtitle">اجتز الصحراء القاسية وصل للمخيم قبل نفاذ الوقود</p>
             <button class="start-btn" id="startBtn">🚙 ابدأ الرحلة</button>
-            <div style="margin-top:18px; display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
-                <button class="modal-btn secondary" id="openSettingsFromMenu">⚙️ الإعدادات</button>
-                <button class="modal-btn secondary" id="openAchievementsFromMenu">🏆 الإنجازات</button>
-                <button class="modal-btn secondary" id="openTutorialFromMenu">📖 كيف ألعب</button>
-            </div>
         </div>
         <div class="credits">
             <p>تطوير: عبدالكريم العبود | <a href="mailto:abo.saleh.g@gmail.com">abo.saleh.g@gmail.com</a></p>
@@ -698,44 +359,17 @@
     
     <!-- HUD -->
     <div id="hud">
-        <div class="hud-panel">
-            <div class="fuel-container">
-                <span class="fuel-icon">⛽</span>
-                <div class="fuel-bar">
-                    <div class="fuel-fill" id="fuelFill"></div>
-                </div>
-            </div>
-            <div class="hp-container">
-                <span class="hp-icon">❤️</span>
-                <div class="hp-bar">
-                    <div class="hp-fill" id="hpFill"></div>
-                </div>
+        <div class="hud-panel fuel-container">
+            <span class="fuel-icon">⛽</span>
+            <div class="fuel-bar">
+                <div class="fuel-fill" id="fuelFill"></div>
             </div>
         </div>
         <div class="hud-panel level-info">
             <div class="level-name" id="levelName">المرحلة الأولى</div>
             <div class="distance" id="distanceText">المسافة: 0 م</div>
-            <div class="timer-info" id="timerInfo" style="display:none;">
-                <div class="timer-name">⏱ الوقت</div>
-                <div class="timer-value" id="timerValue">00:00</div>
-            </div>
         </div>
     </div>
-
-    <!-- Pause Button -->
-    <button id="pauseBtn" aria-label="إيقاف">⏸</button>
-
-    <!-- Effect Badges (powerups, sandstorm) -->
-    <div id="effectBadges"></div>
-
-    <!-- Achievement Toast -->
-    <div id="achievementToast"></div>
-
-    <!-- Sandstorm Overlay -->
-    <div id="sandstormOverlay"></div>
-
-    <!-- Shield Visual -->
-    <div id="shieldVisual"></div>
     
     <!-- Touch Hint -->
     <div id="touchHint">👆 اسحب يميناً ويساراً للتحكم</div>
@@ -763,122 +397,8 @@
     <!-- Final Win Screen -->
     <div id="winScreen">
         <div class="win-title">🏆 مبروك!</div>
-        <div class="win-message" id="winMessage">وصلت للمخيم الصحراوي بسلام!<br>أنت ناجٍ حقيقي!</div>
-        <div class="best-score" id="winBestScore"></div>
+        <div class="win-message">وصلت للمخيم الصحراوي بسلام!<br>أنت ناجٍ حقيقي!</div>
         <button class="retry-btn" id="playAgainBtn">🔄 العب من البداية</button>
-    </div>
-
-    <!-- ============= MODE SELECT ============= -->
-    <div class="modal" id="modeSelectScreen">
-        <div class="modal-card">
-            <h2 class="modal-title">🎯 اختر طريقة اللعب</h2>
-            <div class="selection-grid" id="modeGrid"></div>
-            <div class="modal-actions">
-                <button class="modal-btn secondary" id="modeBackBtn">رجوع</button>
-                <button class="modal-btn" id="modeContinueBtn">متابعة ➡️</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============= VEHICLE SELECT ============= -->
-    <div class="modal" id="vehicleSelectScreen">
-        <div class="modal-card">
-            <h2 class="modal-title">🚙 اختر مركبتك</h2>
-            <div class="selection-grid" id="vehicleGrid"></div>
-            <div class="modal-actions">
-                <button class="modal-btn secondary" id="vehicleBackBtn">رجوع</button>
-                <button class="modal-btn" id="vehicleContinueBtn">انطلق! 🏁</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============= LEVEL SELECT (Story) ============= -->
-    <div class="modal" id="levelSelectScreen">
-        <div class="modal-card">
-            <h2 class="modal-title">🗺 اختر المرحلة</h2>
-            <div class="selection-grid" id="levelGrid"></div>
-            <div class="modal-actions">
-                <button class="modal-btn secondary" id="levelBackBtn">رجوع</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============= PAUSE MENU ============= -->
-    <div class="modal" id="pauseMenu">
-        <div class="modal-card">
-            <h2 class="modal-title">⏸ متوقفة</h2>
-            <div class="modal-actions">
-                <button class="modal-btn" id="resumeBtn">▶️ متابعة</button>
-                <button class="modal-btn secondary" id="pauseSettingsBtn">⚙️ الإعدادات</button>
-                <button class="modal-btn secondary" id="pauseRestartBtn">🔄 إعادة المرحلة</button>
-                <button class="modal-btn danger" id="pauseQuitBtn">🏠 القائمة الرئيسية</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============= SETTINGS MENU ============= -->
-    <div class="modal" id="settingsMenu">
-        <div class="modal-card">
-            <h2 class="modal-title">⚙️ الإعدادات</h2>
-            <div class="modal-row">
-                <span class="modal-label">🔊 الصوت</span>
-                <input type="range" id="volumeSlider" min="0" max="100" value="50">
-                <span id="volumeValue" style="min-width:40px;">50%</span>
-            </div>
-            <div class="modal-row">
-                <span class="modal-label">🎮 الحساسية</span>
-                <input type="range" id="sensitivitySlider" min="50" max="200" value="100">
-                <span id="sensitivityValue" style="min-width:40px;">100%</span>
-            </div>
-            <div class="modal-row">
-                <span class="modal-label">🖼 الجودة</span>
-                <select id="qualitySelect">
-                    <option value="low">منخفضة</option>
-                    <option value="medium" selected>متوسطة</option>
-                    <option value="high">عالية</option>
-                </select>
-            </div>
-            <div class="modal-row">
-                <span class="modal-label">📳 اهتزاز</span>
-                <button class="toggle-btn active" id="vibrationToggle">مفعّل</button>
-            </div>
-            <div class="modal-actions">
-                <button class="modal-btn secondary" id="resetSaveBtn">🗑 مسح التقدم</button>
-                <button class="modal-btn" id="settingsCloseBtn">إغلاق ✓</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============= TUTORIAL ============= -->
-    <div class="modal" id="tutorialModal">
-        <div class="modal-card">
-            <h2 class="modal-title">📖 كيف ألعب</h2>
-            <ul class="tutorial-list">
-                <li>📱 <b>الجوال</b>: اسحب الشاشة يميناً ويساراً للتحكم</li>
-                <li>⌨️ <b>الكيبورد</b>: أسهم/WASD للتوجيه، Esc/P للإيقاف</li>
-                <li>⛽ التقط <b>علب الوقود الخضراء</b> (+10% وقود، +5 صحة)</li>
-                <li>⚡ <b>تعزيز السرعة</b> (أصفر): سرعة 1.5× لمدة 5 ثوان</li>
-                <li>🛡️ <b>الدرع</b> (سماوي): يحميك من الاصطدام التالي</li>
-                <li>⛽⛽ <b>مضاعف الوقود</b> (أزرق): العلبة التالية +20%</li>
-                <li>🪨 تجنّب <b>الصخور والحُفر</b> — تنقص الصحة والوقود</li>
-                <li>🌪 <b>العواصف الرملية</b>: رؤية محدودة وتوجيه أصعب</li>
-                <li>❤️ إذا نفدت <b>الصحة</b> أو <b>الوقود</b> — انتهت اللعبة</li>
-            </ul>
-            <div class="modal-actions">
-                <button class="modal-btn" id="tutorialCloseBtn">فهمت ✓</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- ============= ACHIEVEMENTS ============= -->
-    <div class="modal" id="achievementsModal">
-        <div class="modal-card">
-            <h2 class="modal-title">🏆 الإنجازات</h2>
-            <div class="achievement-list" id="achievementList"></div>
-            <div class="modal-actions">
-                <button class="modal-btn" id="achievementsCloseBtn">إغلاق</button>
-            </div>
-        </div>
     </div>
 
     <script type="importmap">
@@ -889,31 +409,7 @@
         }
     }
     </script>
-
-    <!-- Diagnostic error display (shows JS errors on screen) -->
-    <div id="errorDisplay" style="display:none; position:fixed; top:0; left:0; right:0; background:#c0392b; color:#fff; padding:14px; z-index:9999; font-family:monospace; font-size:0.85rem; max-height:60vh; overflow:auto; direction:ltr; text-align:left; white-space:pre-wrap;"></div>
-    <script>
-        // Global error handlers - show errors on screen so we can diagnose
-        (function() {
-            function showErr(msg, src, line, col, err) {
-                var div = document.getElementById('errorDisplay');
-                if (!div) return;
-                div.style.display = 'block';
-                var text = '⚠ JS ERROR:\n' + (msg || '(no message)');
-                if (src) text += '\n  at ' + src + ':' + line + ':' + col;
-                if (err && err.stack) text += '\n' + err.stack;
-                div.textContent = (div.textContent ? div.textContent + '\n\n' : '') + text;
-                console.error('CAUGHT:', msg, err);
-            }
-            window.addEventListener('error', function(e) {
-                showErr(e.message, e.filename, e.lineno, e.colno, e.error);
-            });
-            window.addEventListener('unhandledrejection', function(e) {
-                showErr('Unhandled promise: ' + (e.reason && e.reason.message || e.reason), '', 0, 0, e.reason);
-            });
-        })();
-    </script>
-
+    
     <script type="module">
         import * as THREE from 'three';
         
@@ -927,18 +423,15 @@
                     fuelConsumption: 0.012,
                     obstacleFrequency: 0.22,
                     fuelCanFrequency: 0.08,
-                    powerupFrequency: 0.06,
                     duneHeight: 1.2,
                     targetName: 'محطة البنزين',
-                    goalType: 'gasStation',
                     skyColors: { top: 0x87CEEB, horizon: 0xFFE4B5, bottom: 0xDEB887 },
                     fogColor: 0xD4C4A8,
                     fogNear: 15,
                     fogFar: 80,
                     sunIntensity: 1.2,
                     cloudColor: 0xffffff,
-                    mountainColor: 0xC4A484,
-                    sandColor: 0xE8D4A8
+                    mountainColor: 0xC4A484
                 },
                 {
                     name: 'المرحلة الثانية - العصر',
@@ -947,18 +440,15 @@
                     fuelConsumption: 0.015,
                     obstacleFrequency: 0.28,
                     fuelCanFrequency: 0.07,
-                    powerupFrequency: 0.07,
                     duneHeight: 1.5,
                     targetName: 'محطة البنزين',
-                    goalType: 'gasStation',
                     skyColors: { top: 0xFF6B35, horizon: 0xFFD700, bottom: 0xDEB887 },
                     fogColor: 0xC9A86C,
                     fogNear: 12,
                     fogFar: 70,
                     sunIntensity: 1.5,
                     cloudColor: 0xffccaa,
-                    mountainColor: 0x8B6914,
-                    sandColor: 0xDEB887
+                    mountainColor: 0x8B6914
                 },
                 {
                     name: 'المرحلة الثالثة - الليل',
@@ -967,81 +457,15 @@
                     fuelConsumption: 0.014,
                     obstacleFrequency: 0.25,
                     fuelCanFrequency: 0.06,
-                    powerupFrequency: 0.08,
                     duneHeight: 1.3,
                     targetName: 'المخيم الصحراوي',
-                    goalType: 'camp',
                     skyColors: { top: 0x0a0a20, horizon: 0x1a1a3a, bottom: 0x2a2a4a },
                     fogColor: 0x151525,
                     fogNear: 10,
                     fogFar: 50,
                     sunIntensity: 0.1,
                     cloudColor: 0x333355,
-                    mountainColor: 0x1a1a2a,
-                    sandColor: 0x3a3a4a
-                },
-                {
-                    name: 'المرحلة الرابعة - الصحراء الصخرية',
-                    timeOfDay: 'afternoon',
-                    distance: 1100,
-                    fuelConsumption: 0.016,
-                    obstacleFrequency: 0.36,
-                    fuelCanFrequency: 0.055,
-                    powerupFrequency: 0.09,
-                    duneHeight: 0.7,
-                    targetName: 'محطة الصخور',
-                    goalType: 'gasStation',
-                    weather: 'sandstorm',
-                    skyColors: { top: 0xC4A484, horizon: 0xE8C094, bottom: 0xB8946C },
-                    fogColor: 0xB8956A,
-                    fogNear: 8,
-                    fogFar: 45,
-                    sunIntensity: 0.9,
-                    cloudColor: 0xddccaa,
-                    mountainColor: 0x6a5440,
-                    sandColor: 0xB8946C
-                },
-                {
-                    name: 'المرحلة الخامسة - الواحة',
-                    timeOfDay: 'morning',
-                    distance: 950,
-                    fuelConsumption: 0.011,
-                    obstacleFrequency: 0.20,
-                    fuelCanFrequency: 0.10,
-                    powerupFrequency: 0.11,
-                    duneHeight: 0.9,
-                    targetName: 'الواحة',
-                    goalType: 'oasis',
-                    skyColors: { top: 0x87CEEB, horizon: 0xAAD9B8, bottom: 0x88CC88 },
-                    fogColor: 0xB8D4A8,
-                    fogNear: 20,
-                    fogFar: 100,
-                    sunIntensity: 1.3,
-                    cloudColor: 0xffffff,
-                    mountainColor: 0x9aaa70,
-                    sandColor: 0xE0CC95,
-                    extraPalms: true
-                },
-                {
-                    name: 'المرحلة السادسة - ممر الجبال',
-                    timeOfDay: 'sunset',
-                    distance: 1300,
-                    fuelConsumption: 0.018,
-                    obstacleFrequency: 0.32,
-                    fuelCanFrequency: 0.06,
-                    powerupFrequency: 0.10,
-                    duneHeight: 2.5,
-                    targetName: 'القمة',
-                    goalType: 'camp',
-                    skyColors: { top: 0x4A3050, horizon: 0xFF6B35, bottom: 0xCC4422 },
-                    fogColor: 0x6a4030,
-                    fogNear: 14,
-                    fogFar: 60,
-                    sunIntensity: 1.0,
-                    cloudColor: 0xffaa88,
-                    mountainColor: 0x554435,
-                    sandColor: 0x9a7a5a,
-                    narrowPath: true
+                    mountainColor: 0x1a1a2a
                 }
             ],
             vehicle: {
@@ -1056,169 +480,6 @@
             },
             camera: {
                 rotationDuration: 3.5
-            },
-            powerups: {
-                boostDuration: 5.0,    // seconds
-                boostMultiplier: 1.5,
-                fuelDoublerAmount: 20  // % per next can
-            },
-            damage: {
-                rockDamage: 22,
-                holeDamage: 15,
-                fuelLossOnHit: 4,
-                hpFromFuelCan: 5,
-                smokeThreshold: 0.5,
-                tiltThreshold: 0.25
-            }
-        };
-
-        // ============= VEHICLE STATS =============
-        const VEHICLES = [
-            {
-                id: 'landCruiser',
-                name: 'لاند كروزر',
-                icon: '🚙',
-                creator: 'landCruiser',
-                bodyColor: 0xD4B896,
-                stats: {
-                    fuelCapacity: 100,
-                    fuelEfficiency: 1.0,
-                    maxHp: 100,
-                    durability: 1.0,
-                    topSpeed: 18,
-                    steeringSensitivity: 1.0
-                },
-                description: 'متوازنة - تحمّل جيد ووقود متوسط'
-            },
-            {
-                id: 'oldJeep',
-                name: 'جيب قديم',
-                icon: '🚜',
-                creator: 'oldJeep',
-                bodyColor: 0x4a6a3a,
-                stats: {
-                    fuelCapacity: 80,
-                    fuelEfficiency: 1.1,
-                    maxHp: 75,
-                    durability: 0.85,
-                    topSpeed: 21,
-                    steeringSensitivity: 1.25
-                },
-                description: 'سريعة لكن هشّة - للمغامرين'
-            },
-            {
-                id: 'pickup',
-                name: 'بيك-أب',
-                icon: '🛻',
-                creator: 'pickup',
-                bodyColor: 0xa83232,
-                stats: {
-                    fuelCapacity: 115,
-                    fuelEfficiency: 1.05,
-                    maxHp: 110,
-                    durability: 1.1,
-                    topSpeed: 17,
-                    steeringSensitivity: 0.9
-                },
-                description: 'وقود أكبر، توازن قوي'
-            },
-            {
-                id: 'smallTruck',
-                name: 'شاحنة صغيرة',
-                icon: '🚚',
-                creator: 'smallTruck',
-                bodyColor: 0x4a6a8a,
-                stats: {
-                    fuelCapacity: 135,
-                    fuelEfficiency: 1.2,
-                    maxHp: 145,
-                    durability: 1.35,
-                    topSpeed: 15,
-                    steeringSensitivity: 0.75
-                },
-                description: 'الأقوى والأبطأ - للناجين'
-            }
-        ];
-
-        // ============= GAME MODES =============
-        const MODES = [
-            { id: 'story', name: 'القصة', icon: '🗺', desc: '6 مراحل متتالية' },
-            { id: 'timeTrial', name: 'سباق الوقت', icon: '⏱', desc: 'وصول قبل انتهاء الوقت' },
-            { id: 'endless', name: 'لا نهائي', icon: '♾', desc: 'تحدّى نفسك بأطول مسافة' }
-        ];
-
-        const TIME_TRIAL_LIMITS = [55, 70, 65, 80, 70, 95]; // seconds per level
-
-        // ============= ACHIEVEMENTS =============
-        const ACHIEVEMENTS = [
-            { id: 'first_level', name: 'البداية', desc: 'أكمل المرحلة الأولى', icon: '🥉' },
-            { id: 'finish_story', name: 'الناجي', desc: 'أكمل جميع مراحل القصة', icon: '🏆' },
-            { id: 'no_damage', name: 'بلا خدش', desc: 'أكمل مرحلة بدون أضرار', icon: '✨' },
-            { id: 'fuel_master', name: 'سيد الوقود', desc: 'اجمع 5 علب وقود في مرحلة', icon: '⛽' },
-            { id: 'endless_1k', name: 'الصامد', desc: 'تجاوز 1000م في وضع لا نهائي', icon: '🏅' },
-            { id: 'endless_3k', name: 'الأسطورة', desc: 'تجاوز 3000م في وضع لا نهائي', icon: '🌟' },
-            { id: 'storm_survivor', name: 'صائد العواصف', desc: 'تجاوز عاصفة رملية', icon: '🌪' },
-            { id: 'all_vehicles', name: 'مجموعة كاملة', desc: 'العب بكل المركبات الأربع', icon: '🚗' },
-            { id: 'time_trial_win', name: 'سريع البرق', desc: 'اكسب أول سباق وقت', icon: '⚡' },
-            { id: 'collect_powerup', name: 'مستكشف', desc: 'اجمع أول قدرة خاصة', icon: '🎁' }
-        ];
-
-        // ============= SAVE SYSTEM =============
-        const SAVE_KEY = 'desertSurvival3D.v1';
-        const SaveSystem = {
-            data: null,
-            load() {
-                try {
-                    const raw = localStorage.getItem(SAVE_KEY);
-                    if (raw) {
-                        this.data = JSON.parse(raw);
-                    }
-                } catch (e) {
-                    console.warn('Save load failed:', e);
-                }
-                if (!this.data || !this.data.schemaVersion) {
-                    this.data = this.defaults();
-                }
-                return this.data;
-            },
-            save() {
-                try {
-                    localStorage.setItem(SAVE_KEY, JSON.stringify(this.data));
-                } catch (e) {
-                    console.warn('Save write failed:', e);
-                }
-            },
-            defaults() {
-                return {
-                    schemaVersion: 1,
-                    settings: {
-                        volume: 0.5,
-                        sensitivity: 1.0,
-                        quality: 'medium',
-                        vibration: true
-                    },
-                    campaign: {
-                        highestUnlocked: 0,
-                        bestTimes: {},
-                        perfectRuns: []
-                    },
-                    timeTrial: { bestTimes: {} },
-                    endless: { bestDistance: 0, runsCompleted: 0 },
-                    vehicles: {
-                        selectedId: 'landCruiser',
-                        played: []
-                    },
-                    achievements: [],
-                    tutorialShown: false
-                };
-            },
-            reset() {
-                this.data = this.defaults();
-                this.save();
-            },
-            update(partial) {
-                Object.assign(this.data, partial);
-                this.save();
             }
         };
         
@@ -1432,9 +693,6 @@
         const state = {
             currentLevel: 0,
             fuel: 100,
-            maxFuel: 100,
-            hp: 100,
-            maxHp: 100,
             distance: 0,
             isPlaying: false,
             isPaused: false,
@@ -1450,34 +708,7 @@
             cameraRotating: false,
             cameraRotationStart: 0,
             cameraRotationType: null,
-            showNextButton: false,
-
-            // New: mode + vehicle stats
-            mode: 'story',                 // 'story' | 'timeTrial' | 'endless'
-            activeVehicle: null,           // populated from VEHICLES on start
-            timeRemaining: 0,              // for time trial
-            timeElapsed: 0,                // for story best-time tracking
-            fuelCansCollected: 0,
-            damageTakenThisLevel: false,
-
-            // Power-ups
-            boostExpires: 0,               // performance.now() timestamp
-            fuelDoubler: false,
-            shielded: false,
-
-            // Sandstorm
-            sandstormActive: false,
-
-            // Endless mode
-            endlessSandstormNext: 0,
-
-            // Smoke particles container
-            smokeParticles: null,
-
-            // Pre-game UI flow
-            pendingMode: 'story',
-            pendingLevel: 0,
-            pendingVehicleId: 'landCruiser'
+            showNextButton: false
         };
         
         // ============= THREE.JS SETUP =============
@@ -1485,16 +716,14 @@
         let terrain = [];
         let obstacles = [];
         let fuelCans = [];
-        let powerups = [];
         let decorations = [];
         let stars = [];
         let clouds = [];
         let mountains = [];
         let dustParticles;
-        let smokeParticles = null;
         let goalMarker;
         const audio = new AudioSystem();
-
+        
         const TERRAIN_CHUNK_SIZE = 50;
         const TERRAIN_RESOLUTION = 40;
         
@@ -1503,11 +732,8 @@
         const startBtn = document.getElementById('startBtn');
         const hud = document.getElementById('hud');
         const fuelFill = document.getElementById('fuelFill');
-        const hpFill = document.getElementById('hpFill');
         const levelName = document.getElementById('levelName');
         const distanceText = document.getElementById('distanceText');
-        const timerInfo = document.getElementById('timerInfo');
-        const timerValue = document.getElementById('timerValue');
         const touchHint = document.getElementById('touchHint');
         const fuelNotification = document.getElementById('fuelNotification');
         const levelCompleteScreen = document.getElementById('levelCompleteScreen');
@@ -1519,25 +745,8 @@
         const endMessage = document.getElementById('endMessage');
         const retryBtn = document.getElementById('retryBtn');
         const winScreen = document.getElementById('winScreen');
-        const winMessage = document.getElementById('winMessage');
-        const winBestScore = document.getElementById('winBestScore');
         const playAgainBtn = document.getElementById('playAgainBtn');
         const mirageOverlay = document.getElementById('mirageOverlay');
-        const pauseBtn = document.getElementById('pauseBtn');
-        const pauseMenu = document.getElementById('pauseMenu');
-        const settingsMenu = document.getElementById('settingsMenu');
-        const tutorialModal = document.getElementById('tutorialModal');
-        const achievementsModal = document.getElementById('achievementsModal');
-        const modeSelectScreen = document.getElementById('modeSelectScreen');
-        const vehicleSelectScreen = document.getElementById('vehicleSelectScreen');
-        const levelSelectScreen = document.getElementById('levelSelectScreen');
-        const modeGrid = document.getElementById('modeGrid');
-        const vehicleGrid = document.getElementById('vehicleGrid');
-        const levelGrid = document.getElementById('levelGrid');
-        const effectBadges = document.getElementById('effectBadges');
-        const achievementToast = document.getElementById('achievementToast');
-        const sandstormOverlay = document.getElementById('sandstormOverlay');
-        const shieldVisual = document.getElementById('shieldVisual');
         
         // ============= BACKGROUND ANIMATION =============
         function initBackgroundCanvas() {
@@ -2511,46 +1720,8 @@
             return group;
         }
         
-        // ============= PARKED + PLAYABLE VEHICLES =============
-        // Add playable contract (wheels/headlights/cargo/frontLight) to any model
-        function addPlayableExtras(group, wheelPositions, frontZ) {
-            group.wheels = [];
-            const wheelGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 14);
-            const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95 });
-            const rimMat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, metalness: 0.7, roughness: 0.4 });
-            wheelPositions.forEach(pos => {
-                const wg = new THREE.Group();
-                const w = new THREE.Mesh(wheelGeom, wheelMat);
-                w.rotation.z = Math.PI / 2;
-                wg.add(w);
-                const r = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.32, 10), rimMat);
-                r.rotation.z = Math.PI / 2;
-                wg.add(r);
-                wg.position.set(...pos);
-                group.add(wg);
-                group.wheels.push(wg);
-            });
-            // Headlights as SpotLight (off by default)
-            group.headlights = [];
-            [-0.55, 0.55].forEach(x => {
-                const sl = new THREE.SpotLight(0xffffcc, 0, 100, 0.6, 0.3);
-                sl.position.set(x, 1.1, frontZ);
-                sl.target.position.set(x, -2, frontZ + 30);
-                group.add(sl);
-                group.add(sl.target);
-                group.headlights.push(sl);
-            });
-            const fl = new THREE.PointLight(0xffffcc, 0, 40);
-            fl.position.set(0, 1.5, frontZ + 1.5);
-            group.add(fl);
-            group.frontLight = fl;
-            // Cargo placeholder (kept for damage smoke attachment)
-            group.cargo = [];
-            group.cargoBounds = { minX: -0.6, maxX: 0.6, minZ: -1.5, maxZ: 0, minY: 0.9 };
-        }
-
-        function createOldJeep(color, opts = {}) {
-            const playable = opts.playable;
+        // ============= PARKED VEHICLES =============
+        function createOldJeep(color) {
             const group = new THREE.Group();
             const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
@@ -2627,29 +1798,24 @@
             spareTire.position.set(-0.4, 1.05, -1.82);
             group.add(spareTire);
 
-            if (playable) {
-                addPlayableExtras(group, [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]], 1.82);
-            } else {
-                const wheelGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 14);
-                const rimGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.32, 10);
-                const rimMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.6, roughness: 0.4 });
-                [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]].forEach(pos => {
-                    const wheel = new THREE.Mesh(wheelGeom, darkMat);
-                    wheel.rotation.z = Math.PI / 2;
-                    wheel.position.set(...pos);
-                    group.add(wheel);
-                    const rim = new THREE.Mesh(rimGeom, rimMat);
-                    rim.rotation.z = Math.PI / 2;
-                    rim.position.set(...pos);
-                    group.add(rim);
-                });
-            }
+            const wheelGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 14);
+            const rimGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.32, 10);
+            const rimMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.6, roughness: 0.4 });
+            [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]].forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeom, darkMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                group.add(wheel);
+                const rim = new THREE.Mesh(rimGeom, rimMat);
+                rim.rotation.z = Math.PI / 2;
+                rim.position.set(...pos);
+                group.add(rim);
+            });
 
             return group;
         }
-
-        function createPickupTruck(color, opts = {}) {
-            const playable = opts.playable;
+        
+        function createPickupTruck(color) {
             const group = new THREE.Group();
             const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
@@ -2738,23 +1904,18 @@
             rbumper.position.set(0, 0.62, -2.04);
             group.add(rbumper);
 
-            if (playable) {
-                addPlayableExtras(group, [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]], 2.82);
-            } else {
-                const wheelGeom = new THREE.CylinderGeometry(0.45, 0.45, 0.3, 14);
-                [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]].forEach(pos => {
-                    const wheel = new THREE.Mesh(wheelGeom, darkMat);
-                    wheel.rotation.z = Math.PI / 2;
-                    wheel.position.set(...pos);
-                    group.add(wheel);
-                });
-            }
+            const wheelGeom = new THREE.CylinderGeometry(0.45, 0.45, 0.3, 14);
+            [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]].forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeom, darkMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                group.add(wheel);
+            });
 
             return group;
         }
-
-        function createSmallTruck(color, opts = {}) {
-            const playable = opts.playable;
+        
+        function createSmallTruck(color) {
             const group = new THREE.Group();
             const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
             const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
@@ -2837,60 +1998,40 @@
             rb.position.set(0, 0.62, -2.32);
             group.add(rb);
 
-            if (playable) {
-                addPlayableExtras(group, [[-1.0, 0.5, 1.8], [1.0, 0.5, 1.8], [-1.0, 0.5, -1.8], [1.0, 0.5, -1.8]], 2.34);
-            } else {
-                const wheelGeom = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 14);
-                const rimGeom = new THREE.CylinderGeometry(0.22, 0.22, 0.36, 10);
-                const rimMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.6, roughness: 0.4 });
-                [
-                    [-1.0, 0.5, 1.8], [1.0, 0.5, 1.8],
-                    [-1.0, 0.5, -0.5], [1.0, 0.5, -0.5],
-                    [-1.0, 0.5, -1.8], [1.0, 0.5, -1.8]
-                ].forEach(pos => {
-                    const wheel = new THREE.Mesh(wheelGeom, darkMat);
-                    wheel.rotation.z = Math.PI / 2;
-                    wheel.position.set(...pos);
-                    group.add(wheel);
-                    const rim = new THREE.Mesh(rimGeom, rimMat);
-                    rim.rotation.z = Math.PI / 2;
-                    rim.position.set(...pos);
-                    group.add(rim);
-                });
-            }
+            const wheelGeom = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 14);
+            const rimGeom = new THREE.CylinderGeometry(0.22, 0.22, 0.36, 10);
+            const rimMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.6, roughness: 0.4 });
+            [
+                [-1.0, 0.5, 1.8], [1.0, 0.5, 1.8],
+                [-1.0, 0.5, -0.5], [1.0, 0.5, -0.5],
+                [-1.0, 0.5, -1.8], [1.0, 0.5, -1.8]
+            ].forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeom, darkMat);
+                wheel.rotation.z = Math.PI / 2;
+                wheel.position.set(...pos);
+                group.add(wheel);
+                const rim = new THREE.Mesh(rimGeom, rimMat);
+                rim.rotation.z = Math.PI / 2;
+                rim.position.set(...pos);
+                group.add(rim);
+            });
 
             return group;
         }
-
-        // ============= VEHICLE FACTORY =============
-        // Returns a playable vehicle group with the contract (wheels, headlights, frontLight, cargo, cargoBounds)
-        function buildPlayerVehicle(vehicleId) {
-            const def = VEHICLES.find(v => v.id === vehicleId) || VEHICLES[0];
-            if (def.creator === 'landCruiser') {
-                return createVehicle();
-            } else if (def.creator === 'oldJeep') {
-                return createOldJeep(def.bodyColor, { playable: true });
-            } else if (def.creator === 'pickup') {
-                return createPickupTruck(def.bodyColor, { playable: true });
-            } else if (def.creator === 'smallTruck') {
-                return createSmallTruck(def.bodyColor, { playable: true });
-            }
-            return createVehicle();
-        }
-
+        
         // ============= TERRAIN GENERATION =============
         function getTerrainHeight(x, z) {
             const level = CONFIG.levels[state.currentLevel];
-
+            
             let height = 0;
             height += Math.sin(x * 0.06 + z * 0.025) * level.duneHeight;
             height += Math.cos(x * 0.04 + z * 0.04) * level.duneHeight * 0.5;
             height += Math.sin(x * 0.12 + z * 0.06) * level.duneHeight * 0.25;
-
-            const roadWidth = level.narrowPath ? 6 : 10;
+            
+            const roadWidth = 10;
             const roadFactor = Math.exp(-(x * x) / (roadWidth * roadWidth));
             height *= (1 - roadFactor * 0.85);
-
+            
             return height;
         }
         
@@ -2912,13 +2053,11 @@
             const sandColors = {
                 morning: 0xE8D4A8,
                 afternoon: 0xDEB887,
-                night: 0x3a3a4a,
-                sunset: 0x9a6a4a
+                night: 0x3a3a4a
             };
-            const sandColor = level.sandColor || sandColors[level.timeOfDay] || 0xDEB887;
-
+            
             const material = new THREE.MeshStandardMaterial({
-                color: sandColor,
+                color: sandColors[level.timeOfDay],
                 roughness: 0.95,
                 metalness: 0,
                 flatShading: true
@@ -2931,7 +2070,7 @@
             mesh.receiveShadow = true;
             
             const baseGeometry = new THREE.BoxGeometry(100, 8, TERRAIN_CHUNK_SIZE);
-            const baseMaterial = new THREE.MeshStandardMaterial({ color: sandColor, roughness: 1 });
+            const baseMaterial = new THREE.MeshStandardMaterial({ color: sandColors[level.timeOfDay], roughness: 1 });
             const base = new THREE.Mesh(baseGeometry, baseMaterial);
             base.position.set(0, -4, zPosition);
             
@@ -3019,164 +2158,6 @@
             return group;
         }
         
-        // ============= POWER-UPS =============
-        function createPowerup(z, type) {
-            const group = new THREE.Group();
-            const x = (Math.random() - 0.5) * 12;
-
-            let baseColor, glowColor, icon;
-            if (type === 'boost') { baseColor = 0xffcc00; glowColor = 0xffee44; }
-            else if (type === 'fuel') { baseColor = 0x33aaff; glowColor = 0x66ccff; }
-            else if (type === 'shield') { baseColor = 0x00ddee; glowColor = 0x66f0ff; }
-
-            // Floating diamond shape
-            const geom = new THREE.OctahedronGeometry(0.45, 0);
-            const mat = new THREE.MeshStandardMaterial({
-                color: baseColor,
-                emissive: baseColor,
-                emissiveIntensity: 0.5,
-                metalness: 0.7,
-                roughness: 0.2
-            });
-            const mesh = new THREE.Mesh(geom, mat);
-            mesh.castShadow = true;
-            group.add(mesh);
-
-            // Glow halo
-            const glowGeom = new THREE.SphereGeometry(0.85, 12, 12);
-            const glowMat = new THREE.MeshBasicMaterial({ color: glowColor, transparent: true, opacity: 0.25 });
-            const glow = new THREE.Mesh(glowGeom, glowMat);
-            group.add(glow);
-            group.glowMesh = glow;
-            group.innerMesh = mesh;
-
-            const terrainHeight = getTerrainHeight(x, z);
-            group.position.set(x, terrainHeight + 1.0, z);
-            group.userData = { radius: 1.4, powerupType: type };
-            return group;
-        }
-
-        // ============= SMOKE PARTICLES (damage indicator) =============
-        function createSmokeParticles() {
-            const count = 60;
-            const geometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(count * 3);
-            const velocities = [];
-
-            for (let i = 0; i < count; i++) {
-                positions[i * 3] = (Math.random() - 0.5) * 0.6;
-                positions[i * 3 + 1] = Math.random() * 0.4;
-                positions[i * 3 + 2] = Math.random() * 0.8 + 1.5;
-                velocities.push({
-                    x: (Math.random() - 0.5) * 0.3,
-                    y: 0.5 + Math.random() * 0.7,
-                    z: -0.3 - Math.random() * 0.4
-                });
-            }
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            const material = new THREE.PointsMaterial({
-                color: 0x444444,
-                size: 0.5,
-                transparent: true,
-                opacity: 0.6
-            });
-            const particles = new THREE.Points(geometry, material);
-            particles.userData.velocities = velocities;
-            return particles;
-        }
-
-        // ============= OASIS GOAL =============
-        function createOasis(z) {
-            const group = new THREE.Group();
-
-            // Water pond
-            const waterGeom = new THREE.CircleGeometry(8, 32);
-            const waterMat = new THREE.MeshStandardMaterial({
-                color: 0x2288cc,
-                transparent: true,
-                opacity: 0.85,
-                metalness: 0.6,
-                roughness: 0.2,
-                emissive: 0x114466,
-                emissiveIntensity: 0.15
-            });
-            const water = new THREE.Mesh(waterGeom, waterMat);
-            water.rotation.x = -Math.PI / 2;
-            water.position.y = 0.08;
-            group.add(water);
-
-            // Surrounding sand/path
-            const ringGeom = new THREE.RingGeometry(8, 12, 32);
-            const ringMat = new THREE.MeshStandardMaterial({ color: 0xC4A484, roughness: 0.9 });
-            const ring = new THREE.Mesh(ringGeom, ringMat);
-            ring.rotation.x = -Math.PI / 2;
-            ring.position.y = 0.05;
-            group.add(ring);
-
-            // Lush palm trees around the pond
-            for (let i = 0; i < 10; i++) {
-                const angle = (i / 10) * Math.PI * 2;
-                const r = 11 + Math.random() * 3;
-                const palm = createPalmTree(Math.sin(angle) * r, Math.cos(angle) * r);
-                palm.position.y = 0;
-                group.add(palm);
-            }
-
-            // Some tents
-            [[15, 4], [-15, -3], [0, -14]].forEach(([tx, tz]) => {
-                const tent = createTent(tx, tz);
-                tent.position.y = 0;
-                group.add(tent);
-            });
-
-            // Welcome arch
-            const archGeom = new THREE.TorusGeometry(3.5, 0.25, 8, 16, Math.PI);
-            const archMat = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
-            const arch = new THREE.Mesh(archGeom, archMat);
-            arch.position.set(0, 3.5, 16);
-            arch.rotation.x = Math.PI / 2;
-            group.add(arch);
-
-            group.position.set(0, 0, z);
-            return group;
-        }
-
-        // ============= ACHIEVEMENT TOAST =============
-        function showAchievementToast(achievement) {
-            achievementToast.innerHTML = `${achievement.icon} <b>${achievement.name}</b><br><span style="font-size:0.8em;opacity:0.9;">${achievement.desc}</span>`;
-            achievementToast.style.display = 'block';
-            achievementToast.style.animation = 'none';
-            void achievementToast.offsetWidth;
-            achievementToast.style.animation = 'popIn 0.4s ease';
-            setTimeout(() => { achievementToast.style.display = 'none'; }, 3000);
-        }
-
-        function unlockAchievement(id) {
-            const ach = ACHIEVEMENTS.find(a => a.id === id);
-            if (!ach) return;
-            if (SaveSystem.data.achievements.includes(id)) return;
-            SaveSystem.data.achievements.push(id);
-            SaveSystem.save();
-            showAchievementToast(ach);
-            if (SaveSystem.data.settings.vibration && navigator.vibrate) navigator.vibrate(100);
-        }
-
-        // ============= EFFECT BADGES =============
-        function updateEffectBadges() {
-            const badges = [];
-            const now = performance.now();
-            if (state.boostExpires > now) {
-                const remaining = Math.ceil((state.boostExpires - now) / 1000);
-                badges.push({ cls: 'boost', text: `⚡ تعزيز ${remaining}s` });
-            }
-            if (state.shielded) badges.push({ cls: 'shield', text: '🛡 درع نشط' });
-            if (state.fuelDoubler) badges.push({ cls: 'fuel', text: '⛽⛽ مضاعف وقود' });
-            if (state.sandstormActive) badges.push({ cls: 'storm', text: '🌪 عاصفة رملية' });
-            effectBadges.innerHTML = badges.map(b => `<div class="effect-badge ${b.cls}">${b.text}</div>`).join('');
-            shieldVisual.style.display = state.shielded ? 'block' : 'none';
-            sandstormOverlay.style.display = state.sandstormActive ? 'block' : 'none';
-        }
-
         // ============= DECORATIONS =============
         function createPalmTree(x, z) {
             const group = new THREE.Group();
@@ -3513,7 +2494,6 @@
             });
             obstacles.forEach(o => scene.remove(o));
             fuelCans.forEach(f => scene.remove(f));
-            powerups.forEach(p => scene.remove(p));
             decorations.forEach(d => scene.remove(d));
             stars.forEach(s => scene.remove(s));
             clouds.forEach(c => scene.remove(c));
@@ -3522,16 +2502,11 @@
                 if (dustParticles.parent) dustParticles.parent.remove(dustParticles);
                 scene.remove(dustParticles);
             }
-            if (smokeParticles) {
-                if (smokeParticles.parent) smokeParticles.parent.remove(smokeParticles);
-                smokeParticles = null;
-            }
             if (goalMarker) scene.remove(goalMarker);
-
+            
             terrain = [];
             obstacles = [];
             fuelCans = [];
-            powerups = [];
             decorations = [];
             stars = [];
             clouds = [];
@@ -3582,70 +2557,37 @@
                 scene.add(chunk.base);
             }
             
-            const isEndless = state.mode === 'endless';
-            const obstacleEnd = isEndless ? 800 : level.distance - 40;
-            const fuelEnd = isEndless ? 800 : level.distance - 60;
-            const powerupEnd = isEndless ? 800 : level.distance - 60;
-            const decorEnd = isEndless ? 800 : level.distance - 150;
-
-            for (let z = 50; z < obstacleEnd; z += 18) {
+            for (let z = 50; z < level.distance - 40; z += 18) {
                 if (Math.random() < level.obstacleFrequency) {
                     const obstacle = createObstacle(z);
                     obstacles.push(obstacle);
                     scene.add(obstacle);
                 }
             }
-
-            for (let z = 80; z < fuelEnd; z += 50) {
+            
+            for (let z = 80; z < level.distance - 60; z += 50) {
                 if (Math.random() < level.fuelCanFrequency) {
                     const fuelCan = createFuelCan(z);
                     fuelCans.push(fuelCan);
                     scene.add(fuelCan);
                 }
             }
-
-            // Power-ups
-            const powerupTypes = ['boost', 'fuel', 'shield'];
-            for (let z = 120; z < powerupEnd; z += 80) {
-                if (Math.random() < (level.powerupFrequency || 0.06)) {
-                    const type = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
-                    const p = createPowerup(z, type);
-                    powerups.push(p);
-                    scene.add(p);
-                }
-            }
-
-            // Decoration tents along the road
-            const palmDensity = level.extraPalms ? 0.7 : 0.0;
-            for (let z = 100; z < decorEnd; z += 130) {
+            
+            for (let z = 100; z < level.distance - 150; z += 130) {
                 if (Math.random() > 0.55) {
                     const side = Math.random() > 0.5 ? 1 : -1;
                     const tent = createTent(side * (22 + Math.random() * 12), z);
                     decorations.push(tent);
                     scene.add(tent);
                 }
-                if (palmDensity > 0 && Math.random() < palmDensity) {
-                    const palmX = (Math.random() > 0.5 ? 1 : -1) * (18 + Math.random() * 14);
-                    const palm = createPalmTree(palmX, z);
-                    decorations.push(palm);
-                    scene.add(palm);
-                }
             }
-
-            // Goal marker only in non-endless modes
-            if (!isEndless) {
-                const goalZ = level.distance + 25;
-                if (level.goalType === 'camp') {
-                    goalMarker = createCamp(goalZ);
-                } else if (level.goalType === 'oasis') {
-                    goalMarker = createOasis(goalZ);
-                } else {
-                    goalMarker = createGasStation(goalZ);
-                }
-                scene.add(goalMarker);
+            
+            if (state.currentLevel === 2) {
+                goalMarker = createCamp(level.distance + 25);
             } else {
-                goalMarker = null;
+                goalMarker = createGasStation(level.distance + 25);
             }
+            scene.add(goalMarker);
             
             if (level.timeOfDay === 'night') {
                 const starField = createStars();
@@ -3682,11 +2624,11 @@
             dustParticles = createDustParticles();
             vehicle.add(dustParticles);
             dustParticles.position.set(0, 0.3, -2.5);
-
-            mirageOverlay.style.display = (level.timeOfDay === 'night' || level.weather === 'sandstorm') ? 'none' : 'block';
-
-            // Reset cargo (only if vehicle has it - some vehicles don't)
-            if (vehicle.cargo && vehicle.cargo.length) {
+            
+            mirageOverlay.style.display = level.timeOfDay === 'night' ? 'none' : 'block';
+            
+            // Reset cargo
+            if (vehicle.cargo) {
                 vehicle.cargo.forEach(item => {
                     if (item.userData.fallen && item.parent !== vehicle) {
                         scene.remove(item);
@@ -3698,13 +2640,8 @@
                     item.userData.fallen = false;
                 });
             }
-
-            // Apply vehicle stats
-            const vStats = state.activeVehicle ? state.activeVehicle.stats : VEHICLES[0].stats;
-            state.maxFuel = vStats.fuelCapacity;
-            state.fuel = vStats.fuelCapacity;
-            state.maxHp = vStats.maxHp;
-            state.hp = vStats.maxHp;
+            
+            state.fuel = 100;
             state.distance = 0;
             state.steering = 0;
             state.targetSteering = 0;
@@ -3714,133 +2651,57 @@
             state.lastCollisionTime = 0;
             state.cameraRotating = false;
             state.showNextButton = false;
-
-            // Reset run-specific tracking
-            state.timeElapsed = 0;
-            state.fuelCansCollected = 0;
-            state.damageTakenThisLevel = false;
-            state.boostExpires = 0;
-            state.fuelDoubler = false;
-            state.shielded = false;
-
-            // Sandstorm setup
-            state.sandstormActive = level.weather === 'sandstorm';
-            if (state.mode === 'endless') {
-                state.endlessSandstormNext = 1200 + Math.random() * 800;
-            }
-
-            // Time trial timer
-            if (state.mode === 'timeTrial') {
-                state.timeRemaining = TIME_TRIAL_LIMITS[state.currentLevel] || 60;
-                timerInfo.style.display = 'block';
-            } else {
-                timerInfo.style.display = 'none';
-            }
-
+            
             vehicle.position.set(0, state.vehicleY, 0);
             vehicle.rotation.set(0, 0, 0);
-
-            // Mode-specific level name
-            if (state.mode === 'endless') {
-                levelName.textContent = '♾ تحدّي لا نهائي';
-            } else if (state.mode === 'timeTrial') {
-                levelName.textContent = '⏱ ' + level.name;
-            } else {
-                levelName.textContent = level.name;
-            }
+            
+            levelName.textContent = level.name;
             updateHUD();
-            updateEffectBadges();
         }
         
         // ============= GAME INITIALIZATION =============
         function initGame() {
             initThreeJS();
-            // Default vehicle for initial scene (will be replaced when player picks)
-            state.activeVehicle = VEHICLES[0];
-            vehicle = buildPlayerVehicle(state.activeVehicle.id);
+            vehicle = createVehicle();
             scene.add(vehicle);
             setupLevel();
         }
-
-        // Rebuild the player vehicle (when switching from menu)
-        function rebuildVehicle(vehicleId) {
-            const def = VEHICLES.find(v => v.id === vehicleId) || VEHICLES[0];
-            state.activeVehicle = def;
-            if (vehicle) {
-                if (dustParticles && dustParticles.parent === vehicle) vehicle.remove(dustParticles);
-                if (smokeParticles && smokeParticles.parent === vehicle) vehicle.remove(smokeParticles);
-                scene.remove(vehicle);
-            }
-            vehicle = buildPlayerVehicle(def.id);
-            scene.add(vehicle);
-            // Track vehicle usage for achievement
-            if (!SaveSystem.data.vehicles.played.includes(def.id)) {
-                SaveSystem.data.vehicles.played.push(def.id);
-                SaveSystem.save();
-                if (SaveSystem.data.vehicles.played.length === VEHICLES.length) {
-                    unlockAchievement('all_vehicles');
-                }
-            }
-        }
         
         // ============= INPUT HANDLING =============
-        function getEffectiveSensitivity() {
-            const baseSens = CONFIG.vehicle.steeringSensitivity;
-            const userMul = SaveSystem.data ? SaveSystem.data.settings.sensitivity : 1.0;
-            const vehMul = state.activeVehicle ? state.activeVehicle.stats.steeringSensitivity : 1.0;
-            const stormMul = state.sandstormActive ? 0.7 : 1.0;
-            return baseSens * userMul * vehMul * stormMul;
-        }
-
         function setupControls() {
             document.addEventListener('touchstart', (e) => {
-                // Ignore touches on UI elements
-                if (e.target.closest('button') || e.target.closest('.modal')) return;
-                if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
+                if (!state.isPlaying || state.cameraRotating) return;
                 state.touchStartX = e.touches[0].clientX;
             }, { passive: false });
-
+            
             document.addEventListener('touchmove', (e) => {
-                if (e.target.closest('button') || e.target.closest('.modal')) return;
-                if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
+                if (!state.isPlaying || state.cameraRotating) return;
                 e.preventDefault();
-
+                
                 const touchX = e.touches[0].clientX;
                 const deltaX = touchX - state.touchStartX;
-
-                state.targetSteering = -deltaX * getEffectiveSensitivity();
-                state.targetSteering = Math.max(-CONFIG.vehicle.maxSteerAngle,
+                
+                state.targetSteering = -deltaX * CONFIG.vehicle.steeringSensitivity;
+                state.targetSteering = Math.max(-CONFIG.vehicle.maxSteerAngle, 
                                         Math.min(CONFIG.vehicle.maxSteerAngle, state.targetSteering));
             }, { passive: false });
-
+            
             document.addEventListener('touchend', () => {
                 state.targetSteering = 0;
             });
-
+            
             document.addEventListener('keydown', (e) => {
-                // Pause toggle (works during play)
-                if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && state.isPlaying && !state.cameraRotating) {
-                    togglePause();
-                    return;
-                }
-                if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
-                if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
+                if (!state.isPlaying || state.cameraRotating) return;
+                if (e.key === 'ArrowLeft' || e.key === 'a') {
                     state.targetSteering = CONFIG.vehicle.maxSteerAngle;
-                } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
+                } else if (e.key === 'ArrowRight' || e.key === 'd') {
                     state.targetSteering = -CONFIG.vehicle.maxSteerAngle;
                 }
             });
-
+            
             document.addEventListener('keyup', (e) => {
-                if (['ArrowLeft', 'a', 'A', 'ArrowRight', 'd', 'D'].includes(e.key)) {
+                if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'ArrowRight' || e.key === 'd') {
                     state.targetSteering = 0;
-                }
-            });
-
-            // Auto-pause on tab hidden
-            document.addEventListener('visibilitychange', () => {
-                if (document.hidden && state.isPlaying && !state.cameraRotating && !state.isPaused) {
-                    togglePause();
                 }
             });
         }
@@ -3849,44 +2710,24 @@
         function checkCollisions() {
             const vehiclePos = vehicle.position;
             const now = Date.now();
-            const durability = state.activeVehicle ? state.activeVehicle.stats.durability : 1.0;
-
+            
             for (let i = obstacles.length - 1; i >= 0; i--) {
                 const obstacle = obstacles[i];
                 const dx = vehiclePos.x - obstacle.position.x;
                 const dz = vehiclePos.z - obstacle.position.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
-
+                
                 if (dist < obstacle.userData.radius + 1.0) {
                     if (now - state.lastCollisionTime > 500) {
-                        // Shield absorbs hit
-                        if (state.shielded) {
-                            state.shielded = false;
-                            audio.playCrash();
-                            updateEffectBadges();
-                            scene.remove(obstacle);
-                            obstacles.splice(i, 1);
-                            state.lastCollisionTime = now;
-                            return true;
-                        }
-
-                        // Apply damage based on obstacle type
-                        const damageBase = obstacle.userData.type === 'hole' ? CONFIG.damage.holeDamage : CONFIG.damage.rockDamage;
-                        const damage = damageBase / durability;
-                        state.hp -= damage;
-                        state.fuel -= CONFIG.damage.fuelLossOnHit;
-                        state.damageTakenThisLevel = true;
+                        state.fuel -= 8;
                         audio.playCrash();
-                        if (SaveSystem.data && SaveSystem.data.settings.vibration && navigator.vibrate) {
-                            navigator.vibrate(120);
-                        }
-
+                        
                         if (state.isGrounded) {
                             state.vehicleVelocityY = 6;
                             state.isGrounded = false;
                         }
-
-                        if (vehicle.cargo && vehicle.cargo.length) {
+                        
+                        if (vehicle.cargo) {
                             vehicle.cargo.forEach(item => {
                                 if (!item.userData.fallen) {
                                     const force = 3 + Math.random() * 2;
@@ -3898,76 +2739,35 @@
                                 }
                             });
                         }
-
-                        // Attach smoke if HP low
-                        if (state.hp < state.maxHp * CONFIG.damage.smokeThreshold && !smokeParticles) {
-                            smokeParticles = createSmokeParticles();
-                            vehicle.add(smokeParticles);
-                            smokeParticles.position.set(0, 1.5, 1.8);
-                        }
-
+                        
                         state.lastCollisionTime = now;
                     }
-
+                    
                     vehicle.position.z -= 0.2;
                     scene.remove(obstacle);
                     obstacles.splice(i, 1);
                     return true;
                 }
             }
-
+            
             for (let i = fuelCans.length - 1; i >= 0; i--) {
                 const fuelCan = fuelCans[i];
                 const dx = vehiclePos.x - fuelCan.position.x;
                 const dz = vehiclePos.z - fuelCan.position.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
-
+                
                 if (dist < fuelCan.userData.radius + 1.0) {
-                    const baseAmt = state.fuelDoubler ? CONFIG.powerups.fuelDoublerAmount : 10;
-                    state.fuel = Math.min(state.maxFuel, state.fuel + baseAmt);
-                    state.hp = Math.min(state.maxHp, state.hp + CONFIG.damage.hpFromFuelCan);
-                    state.fuelCansCollected++;
-                    state.fuelDoubler = false;
+                    state.fuel = Math.min(100, state.fuel + 10);
                     audio.playFuelPickup();
-
-                    fuelNotification.textContent = state.fuelDoubler ? `⛽ +${baseAmt}% وقود!` : `⛽ +${baseAmt}% وقود!`;
+                    
                     fuelNotification.style.display = 'block';
                     setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
-
+                    
                     scene.remove(fuelCan);
                     fuelCans.splice(i, 1);
-                    updateEffectBadges();
-
-                    if (state.fuelCansCollected >= 5) {
-                        unlockAchievement('fuel_master');
-                    }
                 }
             }
-
-            // Power-ups
-            for (let i = powerups.length - 1; i >= 0; i--) {
-                const p = powerups[i];
-                const dx = vehiclePos.x - p.position.x;
-                const dz = vehiclePos.z - p.position.z;
-                const dist = Math.sqrt(dx * dx + dz * dz);
-
-                if (dist < p.userData.radius + 1.0) {
-                    const type = p.userData.powerupType;
-                    if (type === 'boost') {
-                        state.boostExpires = performance.now() + CONFIG.powerups.boostDuration * 1000;
-                    } else if (type === 'fuel') {
-                        state.fuelDoubler = true;
-                    } else if (type === 'shield') {
-                        state.shielded = true;
-                    }
-                    audio.playFuelPickup();
-                    scene.remove(p);
-                    powerups.splice(i, 1);
-                    updateEffectBadges();
-                    unlockAchievement('collect_powerup');
-                }
-            }
-
+            
             return false;
         }
         
@@ -4045,84 +2845,47 @@
         
         // ============= HUD UPDATE =============
         function updateHUD() {
-            const fuelPct = Math.max(0, (state.fuel / state.maxFuel) * 100);
-            fuelFill.style.width = `${fuelPct}%`;
-            if (fuelPct > 50) fuelFill.style.background = 'linear-gradient(90deg, #44ff44, #88ff88)';
-            else if (fuelPct > 25) fuelFill.style.background = 'linear-gradient(90deg, #ffaa00, #ffcc00)';
-            else fuelFill.style.background = 'linear-gradient(90deg, #ff4444, #ff6666)';
-
-            const hpPct = Math.max(0, (state.hp / state.maxHp) * 100);
-            hpFill.style.width = `${hpPct}%`;
-            if (hpPct > 50) hpFill.style.background = 'linear-gradient(90deg, #44ff44, #88ff88)';
-            else if (hpPct > 25) hpFill.style.background = 'linear-gradient(90deg, #ffaa00, #ffcc00)';
-            else hpFill.style.background = 'linear-gradient(90deg, #ff4444, #ff6666)';
-
-            if (state.mode === 'endless') {
-                const best = SaveSystem.data.endless.bestDistance || 0;
-                distanceText.textContent = `📏 ${Math.floor(state.distance)} م | أفضل: ${best}`;
+            fuelFill.style.width = `${Math.max(0, state.fuel)}%`;
+            
+            if (state.fuel > 50) {
+                fuelFill.style.background = 'linear-gradient(90deg, #44ff44, #88ff88)';
+            } else if (state.fuel > 25) {
+                fuelFill.style.background = 'linear-gradient(90deg, #ffaa00, #ffcc00)';
             } else {
-                const level = CONFIG.levels[state.currentLevel];
-                const remaining = Math.max(0, Math.floor(level.distance - state.distance));
-                distanceText.textContent = `المتبقي: ${remaining} م`;
+                fuelFill.style.background = 'linear-gradient(90deg, #ff4444, #ff6666)';
             }
-
-            if (state.mode === 'timeTrial' && timerInfo.style.display !== 'none') {
-                const t = Math.max(0, state.timeRemaining);
-                const min = Math.floor(t / 60);
-                const sec = Math.floor(t % 60);
-                timerValue.textContent = `${min.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
-                if (t < 10) timerValue.classList.add('warning');
-                else timerValue.classList.remove('warning');
-            }
+            
+            const level = CONFIG.levels[state.currentLevel];
+            const remaining = Math.max(0, Math.floor(level.distance - state.distance));
+            distanceText.textContent = `المتبقي: ${remaining} م`;
         }
         
         // ============= UPDATE DUST PARTICLES =============
         function updateDustParticles(delta) {
-            if (dustParticles && state.isGrounded) {
-                const positions = dustParticles.geometry.attributes.position.array;
-                const velocities = dustParticles.userData.velocities;
-
-                for (let i = 0; i < positions.length / 3; i++) {
-                    const idx = i * 3;
-                    positions[idx] += velocities[i].x * delta * 60;
-                    positions[idx + 1] += velocities[i].y * delta * 60;
-                    positions[idx + 2] += velocities[i].z * delta * 60;
-
-                    if (positions[idx + 2] < -10 || positions[idx + 1] > 2.5) {
-                        positions[idx] = (Math.random() - 0.5) * 5;
-                        positions[idx + 1] = Math.random() * 0.3;
-                        positions[idx + 2] = Math.random() * -1.5 - 1;
-                        velocities[i].x = (Math.random() - 0.5) * 0.5;
-                        velocities[i].y = Math.random() * 0.3 + 0.1;
-                        velocities[i].z = -Math.random() * 0.8 - 0.2;
-                    }
-                }
-                dustParticles.geometry.attributes.position.needsUpdate = true;
-            }
-
-            // Smoke particles (damage indicator)
-            if (smokeParticles) {
-                const positions = smokeParticles.geometry.attributes.position.array;
-                const velocities = smokeParticles.userData.velocities;
-                for (let i = 0; i < positions.length / 3; i++) {
-                    const idx = i * 3;
-                    positions[idx] += velocities[i].x * delta * 30;
-                    positions[idx + 1] += velocities[i].y * delta * 30;
-                    positions[idx + 2] += velocities[i].z * delta * 30;
-                    if (positions[idx + 1] > 4 || positions[idx + 2] < -3) {
-                        positions[idx] = (Math.random() - 0.5) * 0.6;
-                        positions[idx + 1] = Math.random() * 0.3;
-                        positions[idx + 2] = Math.random() * 0.5 + 1.5;
-                    }
-                }
-                smokeParticles.geometry.attributes.position.needsUpdate = true;
-
-                // Remove smoke if HP recovered
-                if (state.hp >= state.maxHp * CONFIG.damage.smokeThreshold) {
-                    if (smokeParticles.parent === vehicle) vehicle.remove(smokeParticles);
-                    smokeParticles = null;
+            if (!dustParticles || !state.isGrounded) return;
+            
+            const positions = dustParticles.geometry.attributes.position.array;
+            const velocities = dustParticles.userData.velocities;
+            
+            for (let i = 0; i < positions.length / 3; i++) {
+                const idx = i * 3;
+                
+                positions[idx] += velocities[i].x * delta * 60;
+                positions[idx + 1] += velocities[i].y * delta * 60;
+                positions[idx + 2] += velocities[i].z * delta * 60;
+                
+                if (positions[idx + 2] < -10 || positions[idx + 1] > 2.5) {
+                    positions[idx] = (Math.random() - 0.5) * 5;
+                    positions[idx + 1] = Math.random() * 0.3;
+                    positions[idx + 2] = Math.random() * -1.5 - 1;
+                    
+                    velocities[i].x = (Math.random() - 0.5) * 0.5;
+                    velocities[i].y = Math.random() * 0.3 + 0.1;
+                    velocities[i].z = -Math.random() * 0.8 - 0.2;
                 }
             }
+            
+            dustParticles.geometry.attributes.position.needsUpdate = true;
         }
         
         // ============= UPDATE CLOUDS =============
@@ -4180,17 +2943,6 @@
         }
         
         function showWinScreen() {
-            if (state.mode === 'timeTrial') {
-                winMessage.innerHTML = `أنجزت السباق!<br>الزمن: ${state.timeElapsed.toFixed(2)} ث`;
-                const best = SaveSystem.data.timeTrial.bestTimes[state.currentLevel];
-                winBestScore.textContent = best ? `🏆 أفضل زمن: ${best.toFixed(2)} ث` : '';
-            } else if (state.mode === 'story') {
-                winMessage.innerHTML = `وصلت للمخيم الصحراوي بسلام!<br>أنت ناجٍ حقيقي!`;
-                winBestScore.textContent = '';
-            } else {
-                winMessage.innerHTML = 'وصلت بسلام!';
-                winBestScore.textContent = '';
-            }
             winScreen.style.display = 'flex';
         }
         
@@ -4230,96 +2982,13 @@
             }
             
             const level = CONFIG.levels[state.currentLevel];
-
+            
             state.steering += (state.targetSteering - state.steering) * (1 - CONFIG.vehicle.steeringDamping);
-
-            // Vehicle stats + boost multiplier
-            const baseSpeed = state.activeVehicle ? state.activeVehicle.stats.topSpeed : CONFIG.vehicle.speed;
-            const boostActive = state.boostExpires > performance.now();
-            const speed = baseSpeed * (boostActive ? CONFIG.powerups.boostMultiplier : 1.0);
-
-            // Mode-specific tick
-            state.timeElapsed += delta;
-            if (state.mode === 'timeTrial') {
-                state.timeRemaining -= delta;
-                if (state.timeRemaining <= 0) {
-                    gameOver(false, 'timeout');
-                    return;
-                }
-            }
-            if (state.mode === 'endless') {
-                // Periodic sandstorms
-                if (!state.sandstormActive && state.distance > state.endlessSandstormNext) {
-                    state.sandstormActive = true;
-                    updateEffectBadges();
-                    setTimeout(() => {
-                        state.sandstormActive = false;
-                        state.endlessSandstormNext = state.distance + 1200 + Math.random() * 1000;
-                        unlockAchievement('storm_survivor');
-                        updateEffectBadges();
-                    }, 12000);
-                }
-                // Difficulty scaling: spawn more obstacles ahead
-                if (Math.random() < 0.04 + Math.min(0.08, state.distance / 30000)) {
-                    const z = vehicle.position.z + 200 + Math.random() * 100;
-                    const obs = createObstacle(z);
-                    obstacles.push(obs);
-                    scene.add(obs);
-                }
-                if (Math.random() < 0.02) {
-                    const z = vehicle.position.z + 200 + Math.random() * 100;
-                    const fc = createFuelCan(z);
-                    fuelCans.push(fc);
-                    scene.add(fc);
-                }
-                if (Math.random() < 0.012) {
-                    const z = vehicle.position.z + 200 + Math.random() * 100;
-                    const types = ['boost', 'fuel', 'shield'];
-                    const p = createPowerup(z, types[Math.floor(Math.random() * 3)]);
-                    powerups.push(p);
-                    scene.add(p);
-                }
-                // Recycle terrain chunks behind the player
-                terrain.forEach(t => {
-                    if (t.surface.position.z + TERRAIN_CHUNK_SIZE < vehicle.position.z - 50) {
-                        const newZ = t.surface.position.z + terrain.length * TERRAIN_CHUNK_SIZE;
-                        t.surface.position.z = newZ;
-                        t.base.position.z = newZ;
-                        // Recompute heights
-                        const positions = t.surface.geometry.attributes.position.array;
-                        for (let i = 0; i < positions.length; i += 3) {
-                            const x = positions[i];
-                            const localZ = positions[i + 1];
-                            positions[i + 2] = getTerrainHeight(x, newZ + localZ);
-                        }
-                        t.surface.geometry.attributes.position.needsUpdate = true;
-                        t.surface.geometry.computeVertexNormals();
-                    }
-                });
-                // Cleanup off-screen obstacles/fuel/powerups
-                for (let i = obstacles.length - 1; i >= 0; i--) {
-                    if (obstacles[i].position.z < vehicle.position.z - 30) {
-                        scene.remove(obstacles[i]);
-                        obstacles.splice(i, 1);
-                    }
-                }
-                for (let i = fuelCans.length - 1; i >= 0; i--) {
-                    if (fuelCans[i].position.z < vehicle.position.z - 30) {
-                        scene.remove(fuelCans[i]);
-                        fuelCans.splice(i, 1);
-                    }
-                }
-                for (let i = powerups.length - 1; i >= 0; i--) {
-                    if (powerups[i].position.z < vehicle.position.z - 30) {
-                        scene.remove(powerups[i]);
-                        powerups.splice(i, 1);
-                    }
-                }
-            }
-
+            
+            const speed = CONFIG.vehicle.speed;
             vehicle.position.z += speed * delta;
-            state.distance = state.mode === 'endless' ? vehicle.position.z : vehicle.position.z;
-
+            state.distance = vehicle.position.z;
+            
             vehicle.position.x += state.steering * speed * delta;
             vehicle.position.x = Math.max(-25, Math.min(25, vehicle.position.x));
             
@@ -4350,17 +3019,14 @@
             const backHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z - 2);
             const terrainPitch = Math.atan2(frontHeight - backHeight, 4);
             
-            const damageBias = state.hp < state.maxHp * CONFIG.damage.tiltThreshold ? 0.08 : 0;
-            vehicle.rotation.z = -state.steering * CONFIG.vehicle.bodyTiltFactor + damageBias;
+            vehicle.rotation.z = -state.steering * CONFIG.vehicle.bodyTiltFactor;
             vehicle.rotation.y = state.steering * 0.3;
             vehicle.rotation.x = -terrainPitch * 0.6;
-
-            if (vehicle.wheels) {
-                vehicle.wheels.forEach(wheel => {
-                    if (wheel.children[0]) wheel.children[0].rotation.x += speed * delta * 2;
-                    if (wheel.children[1]) wheel.children[1].rotation.x += speed * delta * 2;
-                });
-            }
+            
+            vehicle.wheels.forEach(wheel => {
+                wheel.children[0].rotation.x += speed * delta * 2;
+                wheel.children[1].rotation.x += speed * delta * 2;
+            });
             
             camera.position.x = vehicle.position.x * 0.3;
             camera.position.y = vehicle.position.y + 7;
@@ -4377,7 +3043,7 @@
             
             updateDustParticles(delta);
             updateCargo(delta);
-
+            
             fuelCans.forEach(can => {
                 can.rotation.y += delta * 2;
                 can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + Math.sin(Date.now() * 0.003) * 0.15;
@@ -4385,42 +3051,28 @@
                     can.glowMesh.material.opacity = 0.15 + Math.sin(Date.now() * 0.005) * 0.1;
                 }
             });
-
-            // Animate powerups
-            powerups.forEach(p => {
-                p.rotation.y += delta * 1.5;
-                if (p.innerMesh) p.innerMesh.rotation.x += delta * 2.5;
-                p.position.y = getTerrainHeight(p.position.x, p.position.z) + 1.0 + Math.sin(Date.now() * 0.004) * 0.2;
-                if (p.glowMesh) {
-                    p.glowMesh.material.opacity = 0.2 + Math.sin(Date.now() * 0.006) * 0.15;
-                }
-            });
-
+            
             if (level.timeOfDay === 'night' && stars[0]) {
                 stars[0].material.opacity = 0.6 + Math.sin(Date.now() * 0.003) * 0.3;
             }
-
-            const fuelEff = state.activeVehicle ? state.activeVehicle.stats.fuelEfficiency : 1.0;
-            state.fuel -= level.fuelConsumption * fuelEff * delta * 60;
-
+            
+            state.fuel -= level.fuelConsumption * delta * 60;
+            
             checkCollisions();
-
+            
             audio.updateEngine(speed, state.steering);
-
-            // Refresh effect badges every ~10 frames for boost countdown
-            if (Math.random() < 0.1) updateEffectBadges();
-
+            
             updateHUD();
-
-            // Win condition
-            if (state.mode !== 'endless' && state.distance >= level.distance - 1) {
+            
+            // Win condition - 1 meter before goal
+            if (state.distance >= level.distance - 1) {
                 completeLevel();
             }
-
-            if (state.fuel <= 0 || state.hp <= 0) {
-                gameOver(false, state.hp <= 0 ? 'destroyed' : 'fuel');
+            
+            if (state.fuel <= 0) {
+                gameOver(false);
             }
-
+            
             renderer.render(scene, camera);
         }
         
@@ -4430,75 +3082,23 @@
             audio.stopEngine();
             audio.playCelebration();
             hud.style.display = 'none';
-            pauseBtn.style.display = 'none';
-
-            // Save best times + unlock achievements
-            const lvl = state.currentLevel;
-            const time = state.timeElapsed;
-            if (state.mode === 'story') {
-                const prev = SaveSystem.data.campaign.bestTimes[lvl];
-                if (!prev || time < prev) SaveSystem.data.campaign.bestTimes[lvl] = time;
-                if (SaveSystem.data.campaign.highestUnlocked < lvl + 1 && lvl + 1 < CONFIG.levels.length) {
-                    SaveSystem.data.campaign.highestUnlocked = lvl + 1;
-                }
-                if (!state.damageTakenThisLevel && !SaveSystem.data.campaign.perfectRuns.includes(lvl)) {
-                    SaveSystem.data.campaign.perfectRuns.push(lvl);
-                    unlockAchievement('no_damage');
-                }
-                if (lvl === 0) unlockAchievement('first_level');
-                SaveSystem.save();
-            } else if (state.mode === 'timeTrial') {
-                const prev = SaveSystem.data.timeTrial.bestTimes[lvl];
-                if (!prev || time < prev) SaveSystem.data.timeTrial.bestTimes[lvl] = time;
-                unlockAchievement('time_trial_win');
-                SaveSystem.save();
-            }
-
+            
             state.cameraRotating = true;
             state.cameraRotationStart = Date.now();
-
-            const isLastStoryLevel = state.mode === 'story' && state.currentLevel >= CONFIG.levels.length - 1;
-            if (isLastStoryLevel) {
-                unlockAchievement('finish_story');
-                state.cameraRotationType = 'win';
-            } else if (state.mode === 'timeTrial' || state.mode === 'story') {
-                state.cameraRotationType = (state.mode === 'story' && state.currentLevel < CONFIG.levels.length - 1) ? 'levelComplete' : 'win';
+            
+            if (state.currentLevel < 2) {
+                state.cameraRotationType = 'levelComplete';
             } else {
                 state.cameraRotationType = 'win';
             }
         }
-
+        
         // ============= GAME OVER =============
-        function gameOver(won, reason) {
+        function gameOver(won) {
             state.isPaused = true;
             audio.stopEngine();
             hud.style.display = 'none';
-            pauseBtn.style.display = 'none';
-
-            // Save endless best
-            if (state.mode === 'endless') {
-                const dist = Math.floor(state.distance);
-                if (dist > (SaveSystem.data.endless.bestDistance || 0)) {
-                    SaveSystem.data.endless.bestDistance = dist;
-                }
-                SaveSystem.data.endless.runsCompleted++;
-                SaveSystem.save();
-                if (dist >= 1000) unlockAchievement('endless_1k');
-                if (dist >= 3000) unlockAchievement('endless_3k');
-            }
-
-            // Customize end message
-            if (reason === 'destroyed') {
-                endTitle.textContent = '💥 تحطمت السيارة!';
-                endMessage.textContent = 'استسلمت المركبة لقسوة الصحراء.';
-            } else if (reason === 'timeout') {
-                endTitle.textContent = '⏱ انتهى الوقت!';
-                endMessage.textContent = 'لم تصل في الوقت المحدد.';
-            } else {
-                endTitle.textContent = '⛽ نفذ الوقود!';
-                endMessage.textContent = 'لم تستطع الوصول في الوقت المناسب.';
-            }
-
+            
             if (!won) {
                 audio.playDefeat();
                 state.cameraRotating = true;
@@ -4506,7 +3106,7 @@
                 state.cameraRotationType = 'lose';
             }
         }
-
+        
         // ============= GO TO NEXT LEVEL =============
         function goToNextLevel() {
             levelCompleteScreen.style.display = 'none';
@@ -4514,395 +3114,63 @@
             state.isPlaying = true;
             state.isPaused = false;
             state.cameraRotating = false;
-
+            
             setupLevel();
             hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
             audio.startEngine();
         }
-
+        
         // ============= START GAME =============
-        function beginRun() {
-            startScreen.style.display = 'none';
-            modeSelectScreen.style.display = 'none';
-            vehicleSelectScreen.style.display = 'none';
-            levelSelectScreen.style.display = 'none';
-            tutorialModal.style.display = 'none';
-            hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
-            touchHint.style.display = 'block';
-
+        function startGame() {
             audio.init();
-            applyVolumeFromSettings();
-
+            startScreen.style.display = 'none';
+            hud.style.display = 'flex';
+            touchHint.style.display = 'block';
+            
             state.isPlaying = true;
             state.gameOver = false;
+            state.currentLevel = 0;
             state.isPaused = false;
             state.cameraRotating = false;
-
-            state.mode = state.pendingMode;
-            state.currentLevel = state.pendingLevel;
-            rebuildVehicle(state.pendingVehicleId);
-
+            
             setupLevel();
             audio.startEngine();
             clock.start();
-
+            
             setTimeout(() => { touchHint.style.display = 'none'; }, 5000);
         }
-
-        // ============= RESTART (same mode/level/vehicle) =============
+        
+        // ============= RESTART GAME =============
         function restartGame() {
             endScreen.style.display = 'none';
             winScreen.style.display = 'none';
             levelCompleteScreen.style.display = 'none';
-
-            // For story mode, go back to selected starting level
-            if (state.mode === 'story') {
-                state.currentLevel = state.pendingLevel;
-            } else if (state.mode === 'endless' || state.mode === 'timeTrial') {
-                state.currentLevel = state.pendingLevel;
-            }
+            
+            state.currentLevel = 0;
             state.isPlaying = true;
             state.isPaused = false;
             state.gameOver = false;
             state.cameraRotating = false;
-
+            
             clock.stop();
             clock.start();
-
+            
             setupLevel();
             hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
             audio.startEngine();
         }
-
-        // ============= "Play Again" from win screen =============
-        function playAgain() {
-            // Return to start menu
-            quitToMenu();
-        }
-
-        // ============= QUIT TO MENU =============
-        function quitToMenu() {
-            endScreen.style.display = 'none';
-            winScreen.style.display = 'none';
-            levelCompleteScreen.style.display = 'none';
-            pauseMenu.style.display = 'none';
-            hud.style.display = 'none';
-            pauseBtn.style.display = 'none';
-            startScreen.style.display = 'flex';
-            state.isPlaying = false;
-            state.isPaused = false;
-            state.cameraRotating = false;
-            audio.stopEngine();
-        }
-
-        // ============= PAUSE =============
-        function togglePause() {
-            if (!state.isPlaying || state.cameraRotating) return;
-            state.isPaused = !state.isPaused;
-            if (state.isPaused) {
-                pauseMenu.style.display = 'flex';
-                audio.stopEngine();
-            } else {
-                pauseMenu.style.display = 'none';
-                settingsMenu.style.display = 'none';
-                audio.startEngine();
-            }
-        }
-
-        // ============= SETTINGS =============
-        function applyVolumeFromSettings() {
-            if (!audio.masterGain || !SaveSystem.data) return;
-            audio.masterGain.gain.value = SaveSystem.data.settings.volume * 0.6;
-        }
-
-        function applyQualityFromSettings() {
-            if (!renderer || !SaveSystem.data) return;
-            const q = SaveSystem.data.settings.quality;
-            if (q === 'low') {
-                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-                renderer.shadowMap.enabled = false;
-            } else if (q === 'medium') {
-                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-                renderer.shadowMap.enabled = true;
-            } else {
-                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                renderer.shadowMap.enabled = true;
-            }
-        }
         
-        // ============= MENU / UI FLOW =============
-        function showModal(el) {
-            // Close all modals first to avoid stacking
-            [pauseMenu, settingsMenu, tutorialModal, achievementsModal, modeSelectScreen, vehicleSelectScreen, levelSelectScreen].forEach(m => {
-                if (m && m !== el) m.style.display = 'none';
-            });
-            el.style.display = 'flex';
-        }
-        function hideModal(el) { el.style.display = 'none'; }
-
-        function populateModeGrid() {
-            modeGrid.innerHTML = '';
-            MODES.forEach(m => {
-                const card = document.createElement('div');
-                card.className = 'selection-card' + (state.pendingMode === m.id ? ' selected' : '');
-                card.innerHTML = `
-                    <div class="selection-icon">${m.icon}</div>
-                    <div class="selection-name">${m.name}</div>
-                    <div class="selection-desc">${m.desc}</div>
-                `;
-                card.addEventListener('click', () => {
-                    state.pendingMode = m.id;
-                    populateModeGrid();
-                });
-                modeGrid.appendChild(card);
-            });
-        }
-
-        function populateVehicleGrid() {
-            vehicleGrid.innerHTML = '';
-            VEHICLES.forEach(v => {
-                const card = document.createElement('div');
-                card.className = 'selection-card' + (state.pendingVehicleId === v.id ? ' selected' : '');
-                const s = v.stats;
-                const max = { fuel: 150, hp: 150, speed: 25, durability: 1.5 };
-                card.innerHTML = `
-                    <div class="selection-icon">${v.icon}</div>
-                    <div class="selection-name">${v.name}</div>
-                    <div class="selection-desc">${v.description}</div>
-                    <div class="stat-bars">
-                        <div class="stat-bar-row"><span class="stat-bar-label">سرعة</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(s.topSpeed/max.speed)*100}%"></div></div></div>
-                        <div class="stat-bar-row"><span class="stat-bar-label">صحة</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(s.maxHp/max.hp)*100}%"></div></div></div>
-                        <div class="stat-bar-row"><span class="stat-bar-label">وقود</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(s.fuelCapacity/max.fuel)*100}%"></div></div></div>
-                        <div class="stat-bar-row"><span class="stat-bar-label">تحمّل</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(s.durability/max.durability)*100}%"></div></div></div>
-                    </div>
-                `;
-                card.addEventListener('click', () => {
-                    state.pendingVehicleId = v.id;
-                    SaveSystem.data.vehicles.selectedId = v.id;
-                    SaveSystem.save();
-                    populateVehicleGrid();
-                });
-                vehicleGrid.appendChild(card);
-            });
-        }
-
-        function populateLevelGrid() {
-            levelGrid.innerHTML = '';
-            const unlockAll = state.pendingMode === 'timeTrial';
-            const maxUnlocked = unlockAll ? CONFIG.levels.length - 1 : SaveSystem.data.campaign.highestUnlocked;
-            CONFIG.levels.forEach((lvl, i) => {
-                const locked = i > maxUnlocked;
-                const card = document.createElement('div');
-                card.className = 'selection-card' + (locked ? ' locked' : '') + (state.pendingLevel === i ? ' selected' : '');
-                const bestTimes = state.pendingMode === 'timeTrial' ? SaveSystem.data.timeTrial.bestTimes : SaveSystem.data.campaign.bestTimes;
-                const bestTime = bestTimes[i];
-                const timeStr = bestTime ? `أفضل: ${bestTime.toFixed(1)}ث` : '-';
-                card.innerHTML = `
-                    <div class="selection-icon">${locked ? '🔒' : (i+1)}</div>
-                    <div class="selection-name" style="font-size:0.85rem;">${lvl.name.split('-').slice(1).join('-').trim() || lvl.name}</div>
-                    <div class="selection-desc">${timeStr}</div>
-                `;
-                if (!locked) {
-                    card.addEventListener('click', () => {
-                        state.pendingLevel = i;
-                        populateLevelGrid();
-                        setTimeout(() => beginRun(), 200);
-                    });
-                }
-                levelGrid.appendChild(card);
-            });
-        }
-
-        function populateAchievements() {
-            const list = document.getElementById('achievementList');
-            list.innerHTML = '';
-            ACHIEVEMENTS.forEach(a => {
-                const unlocked = SaveSystem.data.achievements.includes(a.id);
-                const div = document.createElement('div');
-                div.className = 'achievement-item' + (unlocked ? ' unlocked' : '');
-                div.innerHTML = `
-                    <div class="achievement-icon">${unlocked ? a.icon : '🔒'}</div>
-                    <div class="achievement-info">
-                        <div class="achievement-name">${a.name}</div>
-                        <div class="achievement-desc">${a.desc}</div>
-                    </div>
-                `;
-                list.appendChild(div);
-            });
-        }
-
-        function syncSettingsUI() {
-            const s = SaveSystem.data.settings;
-            const vol = document.getElementById('volumeSlider');
-            const volV = document.getElementById('volumeValue');
-            const sens = document.getElementById('sensitivitySlider');
-            const sensV = document.getElementById('sensitivityValue');
-            const qual = document.getElementById('qualitySelect');
-            const vib = document.getElementById('vibrationToggle');
-            vol.value = Math.round(s.volume * 100);
-            volV.textContent = vol.value + '%';
-            sens.value = Math.round(s.sensitivity * 100);
-            sensV.textContent = sens.value + '%';
-            qual.value = s.quality;
-            vib.classList.toggle('active', s.vibration);
-            vib.textContent = s.vibration ? 'مفعّل' : 'مغلق';
-        }
-
         // ============= EVENT LISTENERS =============
-        // Start screen
-        startBtn.addEventListener('click', () => {
-            populateModeGrid();
-            showModal(modeSelectScreen);
-        });
-        document.getElementById('openSettingsFromMenu').addEventListener('click', () => {
-            syncSettingsUI();
-            showModal(settingsMenu);
-        });
-        document.getElementById('openAchievementsFromMenu').addEventListener('click', () => {
-            populateAchievements();
-            showModal(achievementsModal);
-        });
-        document.getElementById('openTutorialFromMenu').addEventListener('click', () => {
-            showModal(tutorialModal);
-        });
-
-        // Mode select
-        document.getElementById('modeBackBtn').addEventListener('click', () => {
-            hideModal(modeSelectScreen);
-        });
-        document.getElementById('modeContinueBtn').addEventListener('click', () => {
-            populateVehicleGrid();
-            showModal(vehicleSelectScreen);
-        });
-
-        // Vehicle select
-        document.getElementById('vehicleBackBtn').addEventListener('click', () => {
-            populateModeGrid();
-            showModal(modeSelectScreen);
-        });
-        document.getElementById('vehicleContinueBtn').addEventListener('click', () => {
-            // Story and TimeTrial both go through level select; Endless starts immediately
-            if (state.pendingMode === 'story' || state.pendingMode === 'timeTrial') {
-                populateLevelGrid();
-                showModal(levelSelectScreen);
-            } else {
-                state.pendingLevel = 0;
-                beginRun();
-            }
-        });
-
-        // Level select
-        document.getElementById('levelBackBtn').addEventListener('click', () => {
-            populateVehicleGrid();
-            showModal(vehicleSelectScreen);
-        });
-
-        // Pause menu
-        pauseBtn.addEventListener('click', togglePause);
-        document.getElementById('resumeBtn').addEventListener('click', togglePause);
-        document.getElementById('pauseSettingsBtn').addEventListener('click', () => {
-            syncSettingsUI();
-            showModal(settingsMenu);
-        });
-        document.getElementById('pauseRestartBtn').addEventListener('click', () => {
-            hideModal(pauseMenu);
-            state.isPaused = false;
-            restartGame();
-        });
-        document.getElementById('pauseQuitBtn').addEventListener('click', quitToMenu);
-
-        // Settings menu
-        document.getElementById('settingsCloseBtn').addEventListener('click', () => {
-            hideModal(settingsMenu);
-            // If in pause, re-show pause menu
-            if (state.isPaused) showModal(pauseMenu);
-        });
-        document.getElementById('volumeSlider').addEventListener('input', (e) => {
-            SaveSystem.data.settings.volume = parseInt(e.target.value) / 100;
-            document.getElementById('volumeValue').textContent = e.target.value + '%';
-            applyVolumeFromSettings();
-            SaveSystem.save();
-        });
-        document.getElementById('sensitivitySlider').addEventListener('input', (e) => {
-            SaveSystem.data.settings.sensitivity = parseInt(e.target.value) / 100;
-            document.getElementById('sensitivityValue').textContent = e.target.value + '%';
-            SaveSystem.save();
-        });
-        document.getElementById('qualitySelect').addEventListener('change', (e) => {
-            SaveSystem.data.settings.quality = e.target.value;
-            applyQualityFromSettings();
-            SaveSystem.save();
-        });
-        document.getElementById('vibrationToggle').addEventListener('click', (e) => {
-            SaveSystem.data.settings.vibration = !SaveSystem.data.settings.vibration;
-            e.target.classList.toggle('active', SaveSystem.data.settings.vibration);
-            e.target.textContent = SaveSystem.data.settings.vibration ? 'مفعّل' : 'مغلق';
-            SaveSystem.save();
-        });
-        document.getElementById('resetSaveBtn').addEventListener('click', () => {
-            if (confirm('هل أنت متأكد من مسح كل التقدم؟')) {
-                SaveSystem.reset();
-                syncSettingsUI();
-                alert('تم مسح التقدم');
-            }
-        });
-
-        // Tutorial
-        document.getElementById('tutorialCloseBtn').addEventListener('click', () => {
-            hideModal(tutorialModal);
-            SaveSystem.data.tutorialShown = true;
-            SaveSystem.save();
-        });
-
-        // Achievements
-        document.getElementById('achievementsCloseBtn').addEventListener('click', () => {
-            hideModal(achievementsModal);
-        });
-
-        // Existing end-screen buttons
+        startBtn.addEventListener('click', startGame);
         nextLevelBtn.addEventListener('click', goToNextLevel);
         retryBtn.addEventListener('click', restartGame);
-        playAgainBtn.addEventListener('click', playAgain);
-
+        playAgainBtn.addEventListener('click', restartGame);
+        
         // ============= INITIALIZE =============
-        function diag(step) {
-            try {
-                const d = document.getElementById('errorDisplay');
-                if (d && d.dataset) d.dataset.step = step;
-                console.log('[init]', step);
-            } catch(e) {}
-        }
-        try {
-            diag('1: SaveSystem.load');
-            SaveSystem.load();
-            diag('2: pendingVehicleId');
-            state.pendingVehicleId = SaveSystem.data.vehicles.selectedId || 'landCruiser';
-            diag('3: initBackgroundCanvas');
-            initBackgroundCanvas();
-            diag('4: initGame');
-            initGame();
-            diag('5: applyQualityFromSettings');
-            applyQualityFromSettings();
-            diag('6: setupControls');
-            setupControls();
-            diag('7: gameLoop');
-            gameLoop();
-            diag('8: tutorial check');
-            if (!SaveSystem.data.tutorialShown) {
-                setTimeout(() => showModal(tutorialModal), 600);
-            }
-            diag('9: DONE');
-        } catch (initErr) {
-            const div = document.getElementById('errorDisplay');
-            if (div) {
-                div.style.display = 'block';
-                div.textContent = '⚠ Init failed at step: ' + (div.dataset.step || '?') + '\n' + initErr.message + '\n' + (initErr.stack || '');
-            }
-            console.error('Init failed:', initErr);
-        }
+        initBackgroundCanvas();
+        initGame();
+        setupControls();
+        gameLoop();
     </script>
 </body>
 </html>
