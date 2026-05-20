@@ -2,9 +2,20 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>النجاة في الصحراء</title>
     <!-- deploy-trigger -->
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.webmanifest">
+    <meta name="theme-color" content="#3d2810">
+    <meta name="description" content="اجتز الصحراء القاسية وصل للمخيم قبل نفاذ الوقود">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="النجاة">
+    <link rel="icon" href="icons/favicon.png" type="image/png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
     <style>
         * {
             margin: 0;
@@ -5232,6 +5243,17 @@
                 div.textContent = '⚠ Init failed at step: ' + (div.dataset.step || '?') + '\n' + initErr.message + '\n' + (initErr.stack || '');
             }
             console.error('Init failed:', initErr);
+        }
+    </script>
+
+    <!-- Register Service Worker for PWA / offline support -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker
+                    .register('service-worker.js')
+                    .catch((err) => console.warn('SW registration failed:', err));
+            });
         }
     </script>
 </body>
