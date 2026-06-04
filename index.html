@@ -1518,6 +1518,15 @@
         let goalMarker;
         const audio = new AudioSystem();
 
+        // ============= GRAPHICS UPGRADE STATE =============
+        let composer = null, bloomPass = null, smaaPass = null;
+        let usePostProcessing = false;      // gated by quality + successful addon load
+        let postProcessingReady = false;
+        let pmremGenerator = null, envRT = null;
+        let skyDome = null;
+        // Shared uniforms for vertex-shader animation (palm sway, etc.)
+        const fxUniforms = { uTime: { value: 0 } };
+
         const TERRAIN_CHUNK_SIZE = 50;
         const TERRAIN_RESOLUTION = 40;
         
@@ -1627,18 +1636,273 @@
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            
+
+            // --- Modern color / tone-mapping pipeline (Phase 0) ---
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.15;
+
+            // Image-based lighting generator (reflections on metal/glass/sand)
+            try {
+                pmremGenerator = new THREE.PMREMGenerator(renderer);
+                pmremGenerator.compileEquirectangularShader();
+            } catch (e) { pmremGenerator = null; }
+
             clock = new THREE.Clock();
-            
+
             window.addEventListener('resize', onResize);
+
+            // Progressive enhancement: load post-processing addons asynchronously.
+            // If the CDN modules fail (e.g. first-run offline), the game still runs
+            // with a plain render path.
+            setupPostProcessing();
         }
-        
+
+        async function setupPostProcessing() {
+            try {
+                const [{ EffectComposer }, { RenderPass }, { UnrealBloomPass }, { SMAAPass }, { OutputPass }] =
+                    await Promise.all([
+                        import('three/addons/postprocessing/EffectComposer.js'),
+                        import('three/addons/postprocessing/RenderPass.js'),
+                        import('three/addons/postprocessing/UnrealBloomPass.js'),
+                        import('three/addons/postprocessing/SMAAPass.js'),
+                        import('three/addons/postprocessing/OutputPass.js'),
+                    ]);
+                const w = window.innerWidth, h = window.innerHeight;
+                composer = new EffectComposer(renderer);
+                composer.addPass(new RenderPass(scene, camera));
+                bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.55, 0.45, 0.85);
+                composer.addPass(bloomPass);
+                smaaPass = new SMAAPass(w * renderer.getPixelRatio(), h * renderer.getPixelRatio());
+                composer.addPass(smaaPass);
+                composer.addPass(new OutputPass());
+                composer.setSize(w, h);
+                postProcessingReady = true;
+                // Honour current quality setting now that the composer exists.
+                applyQualityFromSettings();
+            } catch (e) {
+                postProcessingReady = false;
+                usePostProcessing = false;
+            }
+        }
+
+        // Single entry point used everywhere instead of renderer.render(...)
+        function renderFrame(delta) {
+            if (usePostProcessing && postProcessingReady && composer) {
+                composer.render(delta || 0);
+            } else {
+                renderer.render(scene, camera);
+            }
+        }
+
         function onResize() {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+            if (bloomPass) bloomPass.setSize(window.innerWidth, window.innerHeight);
         }
         
+        // ============= PROCEDURAL TEXTURES (canvas-generated, no external assets) =============
+        // All textures are generated once and memoized — reused across every chunk/prop.
+        const TextureFactory = (() => {
+            const cache = {};
+            const maxAniso = () => {
+                try { return Math.min(renderer.capabilities.getMaxAnisotropy(), 8); } catch (e) { return 1; }
+            };
+            // Cheap value-noise → fractal brownian motion on a canvas.
+            function fbmCanvas(size, octaves, baseColor, contrast, lo = 0, hi = 1) {
+                const c = document.createElement('canvas');
+                c.width = c.height = size;
+                const ctx = c.getContext('2d');
+                const img = ctx.createImageData(size, size);
+                // Pre-generate a small random lattice and bilinearly sample for smooth noise.
+                const lat = 64;
+                const rnd = new Float32Array(lat * lat);
+                for (let i = 0; i < rnd.length; i++) rnd[i] = Math.random();
+                const sample = (u, v) => {
+                    const x = u * lat, y = v * lat;
+                    const x0 = Math.floor(x) % lat, y0 = Math.floor(y) % lat;
+                    const x1 = (x0 + 1) % lat, y1 = (y0 + 1) % lat;
+                    const fx = x - Math.floor(x), fy = y - Math.floor(y);
+                    const a = rnd[y0 * lat + x0], b = rnd[y0 * lat + x1];
+                    const cc = rnd[y1 * lat + x0], d = rnd[y1 * lat + x1];
+                    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+                    return (a * (1 - sx) + b * sx) * (1 - sy) + (cc * (1 - sx) + d * sx) * sy;
+                };
+                const heights = new Float32Array(size * size);
+                for (let y = 0; y < size; y++) {
+                    for (let x = 0; x < size; x++) {
+                        let amp = 1, freq = 1, sum = 0, norm = 0;
+                        for (let o = 0; o < octaves; o++) {
+                            sum += amp * sample((x / size) * freq, (y / size) * freq);
+                            norm += amp; amp *= 0.5; freq *= 2;
+                        }
+                        let h = sum / norm;
+                        h = 0.5 + (h - 0.5) * contrast;
+                        heights[y * size + x] = h;          // keep raw field for normal map
+                        const b = lo + Math.max(0, Math.min(1, h)) * (hi - lo); // brightness for albedo
+                        const idx = (y * size + x) * 4;
+                        img.data[idx] = Math.min(255, baseColor.r * b);
+                        img.data[idx + 1] = Math.min(255, baseColor.g * b);
+                        img.data[idx + 2] = Math.min(255, baseColor.b * b);
+                        img.data[idx + 3] = 255;
+                    }
+                }
+                ctx.putImageData(img, 0, 0);
+                return { canvas: c, heights, size };
+            }
+            // Derive a tangent-space normal map from a height field (Sobel).
+            function normalFromHeights(heights, size, strength) {
+                const c = document.createElement('canvas');
+                c.width = c.height = size;
+                const ctx = c.getContext('2d');
+                const img = ctx.createImageData(size, size);
+                const at = (x, y) => heights[((y + size) % size) * size + ((x + size) % size)];
+                for (let y = 0; y < size; y++) {
+                    for (let x = 0; x < size; x++) {
+                        const dx = (at(x - 1, y) - at(x + 1, y)) * strength;
+                        const dy = (at(x, y - 1) - at(x, y + 1)) * strength;
+                        const len = Math.sqrt(dx * dx + dy * dy + 1);
+                        const idx = (y * size + x) * 4;
+                        img.data[idx] = ((dx / len) * 0.5 + 0.5) * 255;
+                        img.data[idx + 1] = ((dy / len) * 0.5 + 0.5) * 255;
+                        img.data[idx + 2] = (1 / len) * 255;
+                        img.data[idx + 3] = 255;
+                    }
+                }
+                ctx.putImageData(img, 0, 0);
+                return c;
+            }
+            function makeTex(canvas, { repeat = 1, srgb = true } = {}) {
+                const t = new THREE.CanvasTexture(canvas);
+                t.wrapS = t.wrapT = THREE.RepeatWrapping;
+                t.repeat.set(repeat, repeat);
+                t.anisotropy = maxAniso();
+                t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+                return t;
+            }
+            return {
+                // Returns { map, normalMap } for desert sand tinted to `hexColor`.
+                sand(hexColor) {
+                    const key = 'sand' + hexColor;
+                    if (cache[key]) return cache[key];
+                    const col = new THREE.Color(hexColor);
+                    const base = { r: col.r * 255, g: col.g * 255, b: col.b * 255 };
+                    const { canvas, heights, size } = fbmCanvas(256, 5, base, 0.55, 0.78, 1.06);
+                    const nrm = normalFromHeights(heights, size, 2.2);
+                    cache[key] = {
+                        map: makeTex(canvas, { repeat: 6 }),
+                        normalMap: makeTex(nrm, { repeat: 6, srgb: false }),
+                    };
+                    return cache[key];
+                },
+                rock(hexColor) {
+                    const key = 'rock' + hexColor;
+                    if (cache[key]) return cache[key];
+                    const col = new THREE.Color(hexColor);
+                    const base = { r: col.r * 255, g: col.g * 255, b: col.b * 255 };
+                    const { canvas, heights, size } = fbmCanvas(128, 5, base, 1.1, 0.55, 1.15);
+                    const nrm = normalFromHeights(heights, size, 3.5);
+                    cache[key] = {
+                        map: makeTex(canvas, { repeat: 1 }),
+                        normalMap: makeTex(nrm, { repeat: 1, srgb: false }),
+                    };
+                    return cache[key];
+                },
+                bark(hexColor) {
+                    const key = 'bark' + hexColor;
+                    if (cache[key]) return cache[key];
+                    const c = document.createElement('canvas');
+                    c.width = 64; c.height = 128;
+                    const ctx = c.getContext('2d');
+                    const col = new THREE.Color(hexColor);
+                    ctx.fillStyle = '#' + col.getHexString();
+                    ctx.fillRect(0, 0, 64, 128);
+                    // Vertical bark ridges + ring segments.
+                    for (let i = 0; i < 64; i += 4) {
+                        ctx.fillStyle = `rgba(0,0,0,${0.08 + Math.random() * 0.12})`;
+                        ctx.fillRect(i, 0, 2, 128);
+                    }
+                    for (let y = 0; y < 128; y += 10) {
+                        ctx.fillStyle = `rgba(255,255,255,${0.05 + Math.random() * 0.06})`;
+                        ctx.fillRect(0, y, 64, 2);
+                    }
+                    cache[key] = { map: makeTex(c, { repeat: 1 }) };
+                    return cache[key];
+                },
+                fabric(hexColor) {
+                    const key = 'fabric' + hexColor;
+                    if (cache[key]) return cache[key];
+                    const c = document.createElement('canvas');
+                    c.width = c.height = 64;
+                    const ctx = c.getContext('2d');
+                    const col = new THREE.Color(hexColor);
+                    ctx.fillStyle = '#' + col.getHexString();
+                    ctx.fillRect(0, 0, 64, 64);
+                    // Subtle woven stripes.
+                    for (let i = 0; i < 64; i += 6) {
+                        ctx.fillStyle = `rgba(255,255,255,0.06)`;
+                        ctx.fillRect(i, 0, 3, 64);
+                        ctx.fillStyle = `rgba(0,0,0,0.06)`;
+                        ctx.fillRect(0, i, 64, 3);
+                    }
+                    cache[key] = { map: makeTex(c, { repeat: 2 }) };
+                    return cache[key];
+                },
+            };
+        })();
+
+        // ============= GRADIENT SKY + IMAGE-BASED LIGHTING =============
+        // The levels already define skyColors {top, horizon, bottom} but only `top`
+        // was previously used. Build a real vertical gradient dome from all three.
+        function buildSkyDome(level) {
+            if (skyDome) { scene.remove(skyDome); skyDome.geometry.dispose(); skyDome.material.dispose(); skyDome = null; }
+            const top = new THREE.Color(level.skyColors.top);
+            const horizon = new THREE.Color(level.skyColors.horizon);
+            const bottom = new THREE.Color(level.skyColors.bottom);
+            const mat = new THREE.ShaderMaterial({
+                side: THREE.BackSide,
+                depthWrite: false,
+                fog: false,
+                uniforms: {
+                    topColor: { value: top },
+                    horizonColor: { value: horizon },
+                    bottomColor: { value: bottom },
+                },
+                vertexShader: `
+                    varying vec3 vWorldPos;
+                    void main() {
+                        vWorldPos = position;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }`,
+                fragmentShader: `
+                    varying vec3 vWorldPos;
+                    uniform vec3 topColor, horizonColor, bottomColor;
+                    void main() {
+                        float h = normalize(vWorldPos).y;
+                        vec3 col = h > 0.0
+                            ? mix(horizonColor, topColor, pow(clamp(h, 0.0, 1.0), 0.5))
+                            : mix(horizonColor, bottomColor, clamp(-h * 2.0, 0.0, 1.0));
+                        gl_FragColor = vec4(col, 1.0);
+                    }`,
+            });
+            skyDome = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), mat);
+            skyDome.renderOrder = -1;
+            scene.add(skyDome);
+            scene.background = horizon.clone();
+            // Regenerate image-based environment from the sky for realistic reflections.
+            if (pmremGenerator) {
+                try {
+                    if (envRT) { envRT.dispose(); envRT = null; }
+                    const tmp = new THREE.Scene();
+                    tmp.add(new THREE.Mesh(new THREE.SphereGeometry(10, 16, 8), mat.clone()));
+                    envRT = pmremGenerator.fromScene(tmp, 0, 0.1, 100);
+                    scene.environment = envRT.texture;
+                } catch (e) { /* IBL is optional */ }
+            }
+        }
+
         // ============= SKY ENVIRONMENT =============
         function createMountains() {
             const level = CONFIG.levels[state.currentLevel];
@@ -3241,15 +3505,24 @@
             const geometry = new THREE.PlaneGeometry(100, TERRAIN_CHUNK_SIZE, TERRAIN_RESOLUTION, TERRAIN_RESOLUTION);
             const positions = geometry.attributes.position.array;
             
+            // Per-vertex brightness variation (lighter crests, darker valleys) to break
+            // up texture tiling. Stored as a color attribute, multiplied with the albedo.
+            const colors = new Float32Array(positions.length);
+            const duneRef = (level.duneHeight || 1) * 1.0;
             for (let i = 0; i < positions.length; i += 3) {
                 const x = positions[i];
                 const localZ = positions[i + 1];
                 const worldZ = zPosition + localZ;
-                positions[i + 2] = getTerrainHeight(x, worldZ);
+                const hgt = getTerrainHeight(x, worldZ);
+                positions[i + 2] = hgt;
+                // crest (high) -> ~1.12, valley (low) -> ~0.88, plus a little grain
+                const t = Math.max(-1, Math.min(1, hgt / (duneRef + 0.001)));
+                const shade = 1.0 + t * 0.12 + (Math.random() - 0.5) * 0.04;
+                colors[i] = colors[i + 1] = colors[i + 2] = shade;
             }
-            
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
             geometry.computeVertexNormals();
-            
+
             const sandColors = {
                 morning: 0xE8D4A8,
                 afternoon: 0xDEB887,
@@ -3257,25 +3530,30 @@
                 sunset: 0x9a6a4a
             };
             const sandColor = level.sandColor || sandColors[level.timeOfDay] || 0xDEB887;
+            const sandTex = TextureFactory.sand(sandColor);
 
             const material = new THREE.MeshStandardMaterial({
-                color: sandColor,
+                color: 0xffffff,            // albedo already tinted to sandColor
+                map: sandTex.map,
+                normalMap: sandTex.normalMap,
+                normalScale: new THREE.Vector2(0.6, 0.6),
+                vertexColors: true,
                 roughness: 0.95,
                 metalness: 0,
-                flatShading: true
+                flatShading: false          // smooth shading so the normal map reads
             });
-            
+
             const mesh = new THREE.Mesh(geometry, material);
             mesh.rotation.x = -Math.PI / 2;
             mesh.position.z = zPosition;
             mesh.position.y = 0;
             mesh.receiveShadow = true;
-            
+
             const baseGeometry = new THREE.BoxGeometry(100, 8, TERRAIN_CHUNK_SIZE);
             const baseMaterial = new THREE.MeshStandardMaterial({ color: sandColor, roughness: 1 });
             const base = new THREE.Mesh(baseGeometry, baseMaterial);
             base.position.set(0, -4, zPosition);
-            
+
             return { surface: mesh, base: base };
         }
         
@@ -3290,11 +3568,21 @@
             if (type === 'rock') {
                 const rockSize = 0.7 + Math.random() * 1.0;
                 const geom = new THREE.DodecahedronGeometry(rockSize, 1);
+                // Irregular boulder shape: jitter each vertex outward by noise.
+                const rp = geom.attributes.position;
+                for (let i = 0; i < rp.count; i++) {
+                    const f = 1 + (Math.random() - 0.5) * 0.35;
+                    rp.setXYZ(i, rp.getX(i) * f, rp.getY(i) * f, rp.getZ(i) * f);
+                }
+                rp.needsUpdate = true;
+                geom.computeVertexNormals();
                 // Make rocks more visible at night
                 const rockColor = level.timeOfDay === 'night' ? 0x6a6a7a : 0x8B7355;
+                const rockTex = TextureFactory.rock(rockColor);
                 const mat = new THREE.MeshStandardMaterial({
-                    color: rockColor,
-                    roughness: 0.9,
+                    color: 0xffffff,
+                    map: rockTex.map,
+                    roughness: 0.92,
                     flatShading: true,
                     emissive: level.timeOfDay === 'night' ? 0x222233 : 0x000000,
                     emissiveIntensity: level.timeOfDay === 'night' ? 0.1 : 0
@@ -3523,21 +3811,31 @@
             const group = new THREE.Group();
             const level = CONFIG.levels[state.currentLevel];
             
+            const trunkColor = level.timeOfDay === 'night' ? 0x2a1a10 : 0x4a3520;
             const trunkGeom = new THREE.CylinderGeometry(0.15, 0.35, 5, 8);
-            const trunkMat = new THREE.MeshStandardMaterial({ 
-                color: level.timeOfDay === 'night' ? 0x2a1a10 : 0x4a3520, 
-                roughness: 0.9 
+            const trunkMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: TextureFactory.bark(trunkColor).map,
+                roughness: 0.9
             });
             const trunk = new THREE.Mesh(trunkGeom, trunkMat);
             trunk.position.y = 2.5;
             trunk.castShadow = true;
             group.add(trunk);
-            
-            const leafMat = new THREE.MeshStandardMaterial({ 
-                color: level.timeOfDay === 'night' ? 0x1a4a1a : 0x228B22, 
-                roughness: 0.8, 
-                side: THREE.DoubleSide 
+
+            const leafMat = new THREE.MeshStandardMaterial({
+                color: level.timeOfDay === 'night' ? 0x1a4a1a : 0x228B22,
+                roughness: 0.8,
+                side: THREE.DoubleSide
             });
+            // Wind sway: displace frond tips on the GPU using the shared uTime uniform.
+            leafMat.onBeforeCompile = (shader) => {
+                shader.uniforms.uTime = fxUniforms.uTime;
+                shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader.replace(
+                    '#include <begin_vertex>',
+                    '#include <begin_vertex>\n transformed.x += sin(uTime * 1.6 + transformed.z * 0.5) * (position.y * 0.06);'
+                );
+            };
             for (let i = 0; i < 8; i++) {
                 const leafGeom = new THREE.PlaneGeometry(0.6, 2.5);
                 const leaf = new THREE.Mesh(leafGeom, leafMat);
@@ -3557,8 +3855,9 @@
             const level = CONFIG.levels[state.currentLevel];
             
             const tentGeom = new THREE.ConeGeometry(2.5, 2.2, 4);
-            const tentMat = new THREE.MeshStandardMaterial({ 
-                color: 0x1a1a1a,
+            const tentMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: TextureFactory.fabric(0x6b4a2a).map,
                 roughness: 0.9,
                 side: THREE.DoubleSide
             });
@@ -3880,28 +4179,43 @@
             
             const level = CONFIG.levels[state.currentLevel];
             
-            scene.background = new THREE.Color(level.skyColors.top);
             scene.fog = new THREE.Fog(level.fogColor, level.fogNear, level.fogFar);
-            
+
+            // Gradient sky dome + image-based lighting (sets scene.background/environment)
+            buildSkyDome(level);
+
+            // Tone-mapping exposure tuned per time of day
+            const exposureByTime = { morning: 1.2, afternoon: 1.25, sunset: 1.1, night: 0.85 };
+            renderer.toneMappingExposure = exposureByTime[level.timeOfDay] || 1.15;
+
             scene.children = scene.children.filter(c => !(c instanceof THREE.Light) || c.parent === vehicle);
-            
-            const ambientLight = new THREE.AmbientLight(0xffffff, level.timeOfDay === 'night' ? 0.2 : 0.5);
-            scene.add(ambientLight);
-            
+
+            // Hemisphere light: sky-tinted from above, sand-tinted bounce from below.
+            // Lower than the old flat ambient (0.5) because IBL now also adds sky-tinted fill.
+            const hemiLight = new THREE.HemisphereLight(
+                level.skyColors.top,
+                level.sandColor || 0xDEB887,
+                level.timeOfDay === 'night' ? 0.28 : 0.45
+            );
+            scene.add(hemiLight);
+
             const sunLight = new THREE.DirectionalLight(
-                level.timeOfDay === 'night' ? 0x6666aa : 0xffffee,
-                level.sunIntensity
+                level.timeOfDay === 'night' ? 0x6677bb : 0xfff2dd,
+                level.sunIntensity * (level.timeOfDay === 'night' ? 1.0 : 1.4)
             );
             sunLight.position.set(level.timeOfDay === 'afternoon' ? -40 : 40, 60, 40);
             sunLight.castShadow = true;
-            sunLight.shadow.mapSize.width = 1024;
-            sunLight.shadow.mapSize.height = 1024;
+            const shadowRes = (SaveSystem.data && SaveSystem.data.settings.quality === 'high') ? 2048 : 1024;
+            sunLight.shadow.mapSize.width = shadowRes;
+            sunLight.shadow.mapSize.height = shadowRes;
             sunLight.shadow.camera.near = 1;
             sunLight.shadow.camera.far = 200;
             sunLight.shadow.camera.left = -60;
             sunLight.shadow.camera.right = 60;
             sunLight.shadow.camera.top = 60;
             sunLight.shadow.camera.bottom = -60;
+            sunLight.shadow.bias = -0.0005;
+            sunLight.shadow.normalBias = 0.02;
             scene.add(sunLight);
             
             // Add mountains
@@ -4544,9 +4858,11 @@
             requestAnimationFrame(gameLoop);
             
             const delta = Math.min(clock.getDelta(), 0.05);
-            
+            fxUniforms.uTime.value += delta;
+
             // Update clouds always
             updateClouds(delta);
+            if (skyDome) skyDome.position.copy(camera.position);
             
             if (state.cameraRotating) {
                 updateCameraRotation(delta);
@@ -4561,12 +4877,12 @@
                     stars[0].material.opacity = 0.6 + Math.sin(Date.now() * 0.003) * 0.3;
                 }
                 
-                renderer.render(scene, camera);
+                renderFrame(delta);
                 return;
             }
-            
+
             if (!state.isPlaying || state.isPaused) {
-                renderer.render(scene, camera);
+                renderFrame(delta);
                 return;
             }
             
@@ -4626,15 +4942,25 @@
                         const newZ = t.surface.position.z + terrain.length * TERRAIN_CHUNK_SIZE;
                         t.surface.position.z = newZ;
                         t.base.position.z = newZ;
-                        // Recompute heights
-                        const positions = t.surface.geometry.attributes.position.array;
+                        // Recompute heights (+ crest/valley vertex shading)
+                        const geo = t.surface.geometry;
+                        const positions = geo.attributes.position.array;
+                        const colAttr = geo.attributes.color;
+                        const duneRef = (CONFIG.levels[state.currentLevel].duneHeight || 1);
                         for (let i = 0; i < positions.length; i += 3) {
                             const x = positions[i];
                             const localZ = positions[i + 1];
-                            positions[i + 2] = getTerrainHeight(x, newZ + localZ);
+                            const hgt = getTerrainHeight(x, newZ + localZ);
+                            positions[i + 2] = hgt;
+                            if (colAttr) {
+                                const tt = Math.max(-1, Math.min(1, hgt / (duneRef + 0.001)));
+                                const shade = 1.0 + tt * 0.12;
+                                colAttr.array[i] = colAttr.array[i + 1] = colAttr.array[i + 2] = shade;
+                            }
                         }
-                        t.surface.geometry.attributes.position.needsUpdate = true;
-                        t.surface.geometry.computeVertexNormals();
+                        geo.attributes.position.needsUpdate = true;
+                        if (colAttr) colAttr.needsUpdate = true;
+                        geo.computeVertexNormals();
                     }
                 });
                 // Cleanup off-screen obstacles/fuel/powerups
@@ -4762,7 +5088,7 @@
                 gameOver(false, state.hp <= 0 ? 'destroyed' : 'fuel');
             }
 
-            renderer.render(scene, camera);
+            renderFrame(delta);
         }
         
         // ============= LEVEL COMPLETION =============
@@ -4965,13 +5291,21 @@
             if (q === 'low') {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
                 renderer.shadowMap.enabled = false;
+                usePostProcessing = false;                  // direct render, no bloom (mobile-safe)
             } else if (q === 'medium') {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
                 renderer.shadowMap.enabled = true;
+                usePostProcessing = postProcessingReady;
+                if (bloomPass) bloomPass.strength = 0.45;
             } else {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
                 renderer.shadowMap.enabled = true;
+                usePostProcessing = postProcessingReady;
+                if (bloomPass) bloomPass.strength = 0.6;
             }
+            // Keep the composer's internal buffers in sync with the new pixel ratio.
+            if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+            if (smaaPass) smaaPass.setSize(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
         }
         
         // ============= MENU / UI FLOW =============
