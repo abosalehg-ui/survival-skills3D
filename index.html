@@ -375,7 +375,7 @@
         /* ============= PAUSE BUTTON ============= */
         #pauseBtn {
             position: fixed;
-            top: 12px;
+            bottom: calc(12px + env(safe-area-inset-bottom, 0px));
             left: 12px;
             width: 50px;
             height: 50px;
@@ -4185,17 +4185,20 @@
             buildSkyDome(level);
 
             // Tone-mapping exposure tuned per time of day
-            const exposureByTime = { morning: 1.2, afternoon: 1.25, sunset: 1.1, night: 0.85 };
+            const exposureByTime = { morning: 1.2, afternoon: 1.25, sunset: 1.1, night: 1.05 };
             renderer.toneMappingExposure = exposureByTime[level.timeOfDay] || 1.15;
 
             scene.children = scene.children.filter(c => !(c instanceof THREE.Light) || c.parent === vehicle);
 
             // Hemisphere light: sky-tinted from above, sand-tinted bounce from below.
             // Lower than the old flat ambient (0.5) because IBL now also adds sky-tinted fill.
+            // Night uses a dim blue fill (NOT the near-black sky-top color) so the
+            // player can still see; day uses the real sky-top tint.
+            const hemiSky = level.timeOfDay === 'night' ? 0x5a6690 : level.skyColors.top;
             const hemiLight = new THREE.HemisphereLight(
-                level.skyColors.top,
+                hemiSky,
                 level.sandColor || 0xDEB887,
-                level.timeOfDay === 'night' ? 0.28 : 0.45
+                level.timeOfDay === 'night' ? 0.55 : 0.45
             );
             scene.add(hemiLight);
 
@@ -4307,14 +4310,14 @@
                 stars.push(starField);
                 scene.add(starField);
                 
-                // Much stronger headlights for night
-                vehicle.headlights.forEach(light => { 
-                    light.intensity = 15; 
-                    light.distance = 100;
+                // Much stronger headlights for night (boosted to read through tone mapping)
+                vehicle.headlights.forEach(light => {
+                    light.intensity = 24;
+                    light.distance = 120;
                 });
                 if (vehicle.frontLight) {
-                    vehicle.frontLight.intensity = 8;
-                    vehicle.frontLight.distance = 50;
+                    vehicle.frontLight.intensity = 14;
+                    vehicle.frontLight.distance = 60;
                 }
                 
                 const moonGeom = new THREE.SphereGeometry(10, 16, 16);
@@ -4324,7 +4327,7 @@
                 stars.push(moon);
                 scene.add(moon);
                 
-                const moonLight = new THREE.PointLight(0xaaaaff, 0.3, 600);
+                const moonLight = new THREE.PointLight(0xaaaaff, 0.6, 600);
                 moonLight.position.copy(moon.position);
                 scene.add(moonLight);
             } else {
