@@ -4185,26 +4185,28 @@
             buildSkyDome(level);
 
             // Tone-mapping exposure tuned per time of day
-            const exposureByTime = { morning: 1.2, afternoon: 1.25, sunset: 1.1, night: 1.05 };
+            const exposureByTime = { morning: 1.2, afternoon: 1.25, sunset: 1.1, night: 1.15 };
             renderer.toneMappingExposure = exposureByTime[level.timeOfDay] || 1.15;
 
             scene.children = scene.children.filter(c => !(c instanceof THREE.Light) || c.parent === vehicle);
 
             // Hemisphere light: sky-tinted from above, sand-tinted bounce from below.
             // Lower than the old flat ambient (0.5) because IBL now also adds sky-tinted fill.
-            // Night uses a dim blue fill (NOT the near-black sky-top color) so the
-            // player can still see; day uses the real sky-top tint.
-            const hemiSky = level.timeOfDay === 'night' ? 0x5a6690 : level.skyColors.top;
+            // Night uses a brighter blue fill (the near-black sky-top color gave almost
+            // no light); day uses the real sky-top tint.
+            const hemiSky = level.timeOfDay === 'night' ? 0x6b7bb0 : level.skyColors.top;
             const hemiLight = new THREE.HemisphereLight(
                 hemiSky,
                 level.sandColor || 0xDEB887,
-                level.timeOfDay === 'night' ? 0.55 : 0.45
+                level.timeOfDay === 'night' ? 0.65 : 0.45
             );
             scene.add(hemiLight);
 
+            // At night this acts as broad MOONLIGHT (DirectionalLight is distance-independent,
+            // so it reliably lights the whole terrain unlike the old weak point light).
             const sunLight = new THREE.DirectionalLight(
-                level.timeOfDay === 'night' ? 0x6677bb : 0xfff2dd,
-                level.sunIntensity * (level.timeOfDay === 'night' ? 1.0 : 1.4)
+                level.timeOfDay === 'night' ? 0x9fb0e6 : 0xfff2dd,
+                level.timeOfDay === 'night' ? 1.15 : level.sunIntensity * 1.4
             );
             sunLight.position.set(level.timeOfDay === 'afternoon' ? -40 : 40, 60, 40);
             sunLight.castShadow = true;
@@ -4310,14 +4312,19 @@
                 stars.push(starField);
                 scene.add(starField);
                 
-                // Much stronger headlights for night (boosted to read through tone mapping)
+                // Headlights: decay=0 so the beam does NOT fall off with distance
+                // (physical inverse-square made intensity≈0 on terrain 15-30 units ahead).
                 vehicle.headlights.forEach(light => {
-                    light.intensity = 24;
-                    light.distance = 120;
+                    light.intensity = 4.5;
+                    light.distance = 150;
+                    light.decay = 0;
+                    light.angle = 0.7;
+                    light.penumbra = 0.45;
                 });
                 if (vehicle.frontLight) {
-                    vehicle.frontLight.intensity = 14;
-                    vehicle.frontLight.distance = 60;
+                    vehicle.frontLight.intensity = 3;
+                    vehicle.frontLight.distance = 70;
+                    vehicle.frontLight.decay = 0;
                 }
                 
                 const moonGeom = new THREE.SphereGeometry(10, 16, 16);
@@ -4327,7 +4334,8 @@
                 stars.push(moon);
                 scene.add(moon);
                 
-                const moonLight = new THREE.PointLight(0xaaaaff, 0.6, 600);
+                const moonLight = new THREE.PointLight(0xaaaaff, 0.5, 800);
+                moonLight.decay = 0;   // distance-independent glow (was useless at ~330 units)
                 moonLight.position.copy(moon.position);
                 scene.add(moonLight);
             } else {
