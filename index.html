@@ -1124,7 +1124,7 @@
                 bodyTiltFactor: 0.15,
                 gravity: 30,
                 groundOffset: 0.6,
-                terrainFollowSpeed: 0.2,
+                terrainFollowSpeed: 0.28,
                 collisionHalfWidth: 0.8   // effective car half-width for obstacle hits (was 1.0; tighter = fairer)
             },
             camera: {
@@ -1518,6 +1518,9 @@
             vehicleVelocityY: 0,
             vehicleY: 0,
             isGrounded: true,
+            cameraY: 7,                    // smoothed camera height (lags vehicle so bobbing shows)
+            lastTrackZ: -999,              // last z where a tire-track pair was dropped
+            trackIndex: 0,                 // ring-buffer cursor into the tire-track pool
             cargoItems: [],
             lastCollisionTime: 0,
             cameraRotating: false,
@@ -1563,6 +1566,7 @@
         let stars = [];
         let clouds = [];
         let mountains = [];
+        let tireTracks = [];
         let dustParticles;
         let smokeParticles = null;
         let goalMarker;
@@ -1976,35 +1980,117 @@
         function createMountains() {
             const level = CONFIG.levels[state.currentLevel];
             const group = new THREE.Group();
-            
-            // Create mountain range in the distance
-            const mountainCount = 15;
-            for (let i = 0; i < mountainCount; i++) {
-                const width = 80 + Math.random() * 120;
-                const height = 30 + Math.random() * 50;
-                const geom = new THREE.ConeGeometry(width / 2, height, 4);
-                const mat = new THREE.MeshBasicMaterial({ 
-                    color: level.mountainColor,
-                    transparent: true,
-                    opacity: 0.6,
-                    fog: true
-                });
-                const mountain = new THREE.Mesh(geom, mat);
-                
-                const angle = (i / mountainCount) * Math.PI * 2;
-                const distance = 400 + Math.random() * 100;
-                mountain.position.set(
-                    Math.sin(angle) * distance,
-                    height / 2 - 10,
-                    Math.cos(angle) * distance
-                );
-                mountain.rotation.y = Math.random() * Math.PI;
-                group.add(mountain);
+
+            try {
+                // Natural ridge silhouettes: start from a many-sided cone and carve an
+                // irregular, multi-peak outline with layered angular noise (instead of the
+                // old 4-sided pyramids). Distant + hazy, so a flat-coloured silhouette reads
+                // as a real mountain range.
+                const mountainCount = 18;
+                const v = new THREE.Vector3();
+                for (let i = 0; i < mountainCount; i++) {
+                    const width = 90 + Math.random() * 150;
+                    const height = 34 + Math.random() * 60;
+                    const geom = new THREE.ConeGeometry(width / 2, height, 16, 6);
+                    const pos = geom.attributes.position;
+                    const seed = Math.random() * 100;
+                    const s2 = Math.random() * 100;
+                    for (let j = 0; j < pos.count; j++) {
+                        v.fromBufferAttribute(pos, j);
+                        const t = (v.y + height / 2) / height;          // 0 base → 1 apex
+                        const ang = Math.atan2(v.z, v.x);
+                        // Layered ridge noise around the silhouette.
+                        const ridge = Math.sin(ang * 3 + seed) * 0.5
+                                    + Math.sin(ang * 7 + s2) * 0.28
+                                    + Math.sin(ang * 13 + seed * 1.7) * 0.16;
+                        // Widen + jag the lower slopes, converge toward the apex.
+                        const radialAmt = (1 - t) * 0.55 + 0.12;
+                        const scale = 1 + ridge * radialAmt;
+                        v.x *= scale; v.z *= scale;
+                        // Vertical bumps create secondary peaks/saddles near the top.
+                        v.y += ridge * height * 0.14 * t;
+                        pos.setXYZ(j, v.x, v.y, v.z);
+                    }
+                    pos.needsUpdate = true;
+                    geom.computeVertexNormals();
+                    const mat = new THREE.MeshBasicMaterial({
+                        color: level.mountainColor,
+                        transparent: true,
+                        opacity: 0.6,
+                        fog: true
+                    });
+                    const mountain = new THREE.Mesh(geom, mat);
+                    const angle = (i / mountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+                    const distance = 370 + Math.random() * 150;
+                    mountain.position.set(
+                        Math.sin(angle) * distance,
+                        height / 2 - 12,
+                        Math.cos(angle) * distance
+                    );
+                    mountain.rotation.y = Math.random() * Math.PI;
+                    mountain.scale.y = 0.8 + Math.random() * 0.5;
+                    group.add(mountain);
+                }
+            } catch (e) {
+                // Fallback to the simple cone range if anything above fails.
+                for (let i = 0; i < 15; i++) {
+                    const width = 80 + Math.random() * 120;
+                    const height = 30 + Math.random() * 50;
+                    const geom = new THREE.ConeGeometry(width / 2, height, 5);
+                    const mat = new THREE.MeshBasicMaterial({ color: level.mountainColor, transparent: true, opacity: 0.6, fog: true });
+                    const mountain = new THREE.Mesh(geom, mat);
+                    const angle = (i / 15) * Math.PI * 2;
+                    const distance = 400 + Math.random() * 100;
+                    mountain.position.set(Math.sin(angle) * distance, height / 2 - 10, Math.cos(angle) * distance);
+                    mountain.rotation.y = Math.random() * Math.PI;
+                    group.add(mountain);
+                }
             }
-            
+
             return group;
         }
-        
+
+        // Ring-buffer pool of flat dark quads laid on the ground to fake tire tracks.
+        // One shared geometry/material keeps it cheap; marks are repositioned (not
+        // recreated) as the car advances, so the trail is continuous and allocation-free.
+        function createTireTracks() {
+            const tracks = [];
+            try {
+                const geom = new THREE.PlaneGeometry(0.34, 1.15);
+                const mat = new THREE.MeshBasicMaterial({
+                    color: 0x241910,
+                    transparent: true,
+                    opacity: 0.42,
+                    depthWrite: false
+                });
+                const POOL = 80;
+                for (let i = 0; i < POOL; i++) {
+                    const m = new THREE.Mesh(geom, mat);
+                    m.rotation.x = -Math.PI / 2;
+                    m.visible = false;
+                    m.renderOrder = 1;          // draw over the sand to avoid z-fighting
+                    scene.add(m);
+                    tracks.push(m);
+                }
+            } catch (e) { /* tracks are purely cosmetic */ }
+            return tracks;
+        }
+
+        function updateTireTracks() {
+            if (!tireTracks.length || !state.isGrounded) return;
+            if (vehicle.position.z - state.lastTrackZ < 1.0) return;   // drop spacing
+            state.lastTrackZ = vehicle.position.z;
+            const halfTrack = 0.82;
+            const rearZ = vehicle.position.z - 1.3;
+            for (let side = -1; side <= 1; side += 2) {
+                const m = tireTracks[state.trackIndex % tireTracks.length];
+                state.trackIndex++;
+                const tx = vehicle.position.x + side * halfTrack;
+                m.position.set(tx, getTerrainHeight(tx, rearZ) + 0.04, rearZ);
+                m.visible = true;
+            }
+        }
+
         function createClouds() {
             const level = CONFIG.levels[state.currentLevel];
             const group = new THREE.Group();
@@ -3563,7 +3649,10 @@
 
             const roadWidth = level.narrowPath ? 6 : 10;
             const roadFactor = Math.exp(-(x * x) / (roadWidth * roadWidth));
-            height *= (1 - roadFactor * 0.85);
+            // Keep the path noticeably lower than the dunes for a readable track, but no
+            // longer near-flat: retaining ~45% of the dune height lets the car visibly
+            // climb and dip over the terrain instead of gliding on a flat strip.
+            height *= (1 - roadFactor * 0.55);
 
             return height;
         }
@@ -4280,6 +4369,8 @@
             stars.forEach(s => { scene.remove(s); disposeObject3D(s); });
             clouds.forEach(c => { scene.remove(c); disposeObject3D(c); });
             mountains.forEach(m => { scene.remove(m); disposeObject3D(m); });
+            tireTracks.forEach(t => { scene.remove(t); disposeObject3D(t); });
+            tireTracks = [];
             // Drain endless-mode pools so stale (possibly wrong-level-coloured) objects
             // from a previous run don't leak into the new level.
             obstaclePool.forEach(o => disposeObject3D(o)); obstaclePool.length = 0;
@@ -4304,7 +4395,10 @@
             stars = [];
             clouds = [];
             mountains = [];
-            
+            // Reset tire-track trail for the new run.
+            state.lastTrackZ = -999;
+            state.trackIndex = 0;
+
             const level = CONFIG.levels[state.currentLevel];
             
             scene.fog = new THREE.Fog(level.fogColor, level.fogNear, level.fogFar);
@@ -4360,7 +4454,10 @@
             const cloudGroup = createClouds();
             clouds.push(cloudGroup);
             scene.add(cloudGroup);
-            
+
+            // Tire-track pool (laid down as the car drives).
+            tireTracks = createTireTracks();
+
             const numChunks = Math.ceil((level.distance + 200) / TERRAIN_CHUNK_SIZE) + 3;
             for (let i = 0; i < numChunks; i++) {
                 const zPos = i * TERRAIN_CHUNK_SIZE - TERRAIN_CHUNK_SIZE;
@@ -4514,6 +4611,9 @@
             state.vehicleVelocityY = 0;
             state.vehicleY = CONFIG.vehicle.groundOffset;
             state.isGrounded = true;
+            state.cameraY = state.vehicleY + 7;
+            state.lastTrackZ = -999;
+            state.trackIndex = 0;
             state.lastCollisionTime = 0;
             state.cameraRotating = false;
             state.showNextButton = false;
@@ -5190,23 +5290,31 @@
             } else {
                 const heightDiff = targetHeight - state.vehicleY;
                 state.vehicleY += heightDiff * CONFIG.vehicle.terrainFollowSpeed;
-                
-                if (heightDiff < -0.3) {
+
+                // Only launch on a sharp drop; gentle dune descents are followed smoothly
+                // (the car bobs with the terrain instead of hopping constantly).
+                if (heightDiff < -0.5) {
                     state.isGrounded = false;
                     state.vehicleVelocityY = 0;
                 }
             }
             
             vehicle.position.y = state.vehicleY;
-            
-            const frontHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z + 2);
-            const backHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z - 2);
-            const terrainPitch = Math.atan2(frontHeight - backHeight, 4);
-            
+
+            // Pitch (nose up/down over dunes) sampled fore/aft, and roll from the
+            // lateral (left/right) slope so the body leans into the terrain, not just steering.
+            const px = vehicle.position.x, pz = vehicle.position.z;
+            const frontHeight = getTerrainHeight(px, pz + 3);
+            const backHeight = getTerrainHeight(px, pz - 3);
+            const terrainPitch = Math.atan2(frontHeight - backHeight, 6);
+            const leftHeight = getTerrainHeight(px - 1.5, pz);
+            const rightHeight = getTerrainHeight(px + 1.5, pz);
+            const terrainRoll = Math.atan2(leftHeight - rightHeight, 3);
+
             const damageBias = state.hp < state.maxHp * CONFIG.damage.tiltThreshold ? 0.08 : 0;
-            vehicle.rotation.z = -state.steering * CONFIG.vehicle.bodyTiltFactor + damageBias;
+            vehicle.rotation.z = -state.steering * CONFIG.vehicle.bodyTiltFactor + damageBias + terrainRoll * 0.5;
             vehicle.rotation.y = state.steering * 0.3;
-            vehicle.rotation.x = -terrainPitch * 0.6;
+            vehicle.rotation.x = -terrainPitch * 0.9;
 
             if (vehicle.wheels) {
                 vehicle.wheels.forEach(wheel => {
@@ -5214,9 +5322,15 @@
                     if (wheel.children[1]) wheel.children[1].rotation.x += speed * delta * 2;
                 });
             }
-            
+
+            // Leave tire tracks on the ground behind the rear wheels while driving.
+            updateTireTracks();
+
+            // Smooth the camera height so it lags the vehicle slightly: the car visibly
+            // rises and dips within the frame instead of the whole view moving rigidly.
+            state.cameraY += ((vehicle.position.y + 7) - state.cameraY) * Math.min(1, delta * 6);
             camera.position.x = vehicle.position.x * 0.3;
-            camera.position.y = vehicle.position.y + 7;
+            camera.position.y = state.cameraY;
             camera.position.z = vehicle.position.z - 14;
             camera.lookAt(vehicle.position.x * 0.5, vehicle.position.y + 2, vehicle.position.z + 18);
             
