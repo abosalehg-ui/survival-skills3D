@@ -1,5 +1,5 @@
 /* Service Worker for "النجاة في الصحراء" PWA */
-const CACHE_VERSION = 'v2';
+const CACHE_VERSION = 'v3';
 const STATIC_CACHE = `desert-survival-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `desert-survival-runtime-${CACHE_VERSION}`;
 
@@ -14,11 +14,34 @@ const STATIC_ASSETS = [
   './icons/favicon.png',
 ];
 
+// Three.js comes from a CDN. Pre-caching the core module makes the game playable
+// offline on the very FIRST launch (previously it only worked after an online run).
+// The post-processing add-ons are progressive enhancement — the game falls back to a
+// plain render path if they aren't cached — so they're cached best-effort.
+const THREE_BASE = 'https://cdn.jsdelivr.net/npm/three@0.160.0/';
+const CDN_CORE = [THREE_BASE + 'build/three.module.js'];
+const CDN_OPTIONAL = [
+  THREE_BASE + 'examples/jsm/postprocessing/EffectComposer.js',
+  THREE_BASE + 'examples/jsm/postprocessing/RenderPass.js',
+  THREE_BASE + 'examples/jsm/postprocessing/UnrealBloomPass.js',
+  THREE_BASE + 'examples/jsm/postprocessing/SMAAPass.js',
+  THREE_BASE + 'examples/jsm/postprocessing/OutputPass.js',
+];
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE)
-      .then((cache) => cache.addAll(STATIC_ASSETS))
-      .then(() => self.skipWaiting())
+    (async () => {
+      const cache = await caches.open(STATIC_CACHE);
+      // Local assets must succeed for a valid install.
+      await cache.addAll(STATIC_ASSETS);
+      // CDN core: try to cache it, but don't fail install if currently offline.
+      try { await cache.addAll(CDN_CORE); } catch (e) { /* will be picked up at runtime */ }
+      // CDN optional add-ons: fully best-effort, one by one.
+      await Promise.all(CDN_OPTIONAL.map((u) =>
+        cache.add(u).catch(() => { /* progressive enhancement only */ })
+      ));
+      await self.skipWaiting();
+    })()
   );
 });
 
@@ -71,10 +94,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cross-origin (e.g. Three.js from jsdelivr): stale-while-revalidate
+  // Cross-origin (e.g. Three.js from jsdelivr): stale-while-revalidate.
+  // Check ALL caches first (caches.match) so the install-time STATIC_CACHE copy of
+  // three.module.js is found, then refresh into RUNTIME_CACHE in the background.
   event.respondWith(
-    caches.open(RUNTIME_CACHE).then((cache) =>
-      cache.match(req).then((cached) => {
+    caches.match(req).then((cached) =>
+      caches.open(RUNTIME_CACHE).then((cache) => {
         const fetchPromise = fetch(req)
           .then((res) => {
             if (res && (res.ok || res.type === 'opaque')) {

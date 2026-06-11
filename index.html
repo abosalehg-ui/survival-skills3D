@@ -203,7 +203,42 @@
             0%, 100% { opacity: 0.3; }
             50% { opacity: 0.8; }
         }
-        
+
+        /* On-screen steering buttons — only shown on touch devices (toggled in JS). */
+        #steerButtons {
+            display: none;
+            position: fixed;
+            bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+            left: 0;
+            right: 0;
+            justify-content: space-between;
+            padding: 0 18px;
+            z-index: 90;
+            pointer-events: none;
+        }
+        #steerButtons.visible { display: flex; }
+        .steer-btn {
+            pointer-events: auto;
+            width: clamp(64px, 16vw, 96px);
+            height: clamp(64px, 16vw, 96px);
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.35);
+            background: rgba(0,0,0,0.28);
+            color: rgba(255,255,255,0.85);
+            font-size: clamp(1.6rem, 6vw, 2.4rem);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+            transition: background 0.1s ease, transform 0.1s ease;
+        }
+        .steer-btn:active, .steer-btn.pressed {
+            background: rgba(255,210,90,0.5);
+            transform: scale(0.92);
+        }
+
         /* Fuel Pickup Notification */
         #fuelNotification {
             position: fixed;
@@ -370,6 +405,14 @@
             background: linear-gradient(90deg, #ff4444, #ffaa00, #44ff44);
             border-radius: 10px;
             transition: width 0.3s ease;
+        }
+        /* Critical-HP warning: pulse the whole bar so the player notices imminent death. */
+        .hp-bar.critical {
+            animation: hpCritical 0.7s ease-in-out infinite;
+        }
+        @keyframes hpCritical {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(255,40,40,0); }
+            50% { box-shadow: 0 0 10px 3px rgba(255,40,40,0.85); }
         }
 
         /* ============= PAUSE BUTTON ============= */
@@ -730,7 +773,7 @@
             </div>
             <div class="hp-container">
                 <span class="hp-icon">❤️</span>
-                <div class="hp-bar">
+                <div class="hp-bar" id="hpBar">
                     <div class="hp-fill" id="hpFill"></div>
                 </div>
             </div>
@@ -752,7 +795,7 @@
     <div id="effectBadges"></div>
 
     <!-- Achievement Toast -->
-    <div id="achievementToast"></div>
+    <div id="achievementToast" role="status" aria-live="polite"></div>
 
     <!-- Sandstorm Overlay -->
     <div id="sandstormOverlay"></div>
@@ -760,11 +803,17 @@
     <!-- Shield Visual -->
     <div id="shieldVisual"></div>
     
+    <!-- On-screen steering buttons (touch devices) -->
+    <div id="steerButtons">
+        <button id="steerLeftBtn" class="steer-btn" aria-label="انعطاف يسار">◀</button>
+        <button id="steerRightBtn" class="steer-btn" aria-label="انعطاف يمين">▶</button>
+    </div>
+
     <!-- Touch Hint -->
     <div id="touchHint">👆 اسحب يميناً ويساراً للتحكم</div>
     
     <!-- Fuel Notification -->
-    <div id="fuelNotification">⛽ +10% وقود!</div>
+    <div id="fuelNotification" role="status" aria-live="polite">⛽ +10% وقود!</div>
     
     <!-- Mirage Overlay -->
     <div id="mirageOverlay"></div>
@@ -1071,11 +1120,12 @@
                 speed: 18,
                 steeringSensitivity: 0.003,
                 maxSteerAngle: 0.8,
-                steeringDamping: 0.92,
+                steeringDamping: 0.86,   // per-60fps-frame retention; lower = snappier turning
                 bodyTiltFactor: 0.15,
                 gravity: 30,
                 groundOffset: 0.6,
-                terrainFollowSpeed: 0.2
+                terrainFollowSpeed: 0.2,
+                collisionHalfWidth: 0.8   // effective car half-width for obstacle hits (was 1.0; tighter = fairer)
             },
             camera: {
                 rotationDuration: 3.5
@@ -1536,6 +1586,16 @@
         const hud = document.getElementById('hud');
         const fuelFill = document.getElementById('fuelFill');
         const hpFill = document.getElementById('hpFill');
+        const hpBar = document.getElementById('hpBar');
+        const steerButtonsEl = document.getElementById('steerButtons');
+        const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+        // Shared red→amber→green gradient for fuel/HP bars (was duplicated per bar).
+        function barColor(pct) {
+            if (pct > 50) return 'linear-gradient(90deg, #44ff44, #88ff88)';
+            if (pct > 25) return 'linear-gradient(90deg, #ffaa00, #ffcc00)';
+            return 'linear-gradient(90deg, #ff4444, #ff6666)';
+        }
         const levelName = document.getElementById('levelName');
         const distanceText = document.getElementById('distanceText');
         const timerInfo = document.getElementById('timerInfo');
@@ -1596,7 +1656,7 @@
             
             let time = 0;
             function animate() {
-                if (!startScreen.style.display || startScreen.style.display !== 'none') {
+                if (startScreen.style.display !== 'none') {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
                     
                     dunes.forEach(dune => {
@@ -1688,10 +1748,17 @@
 
         // Single entry point used everywhere instead of renderer.render(...)
         function renderFrame(delta) {
-            if (usePostProcessing && postProcessingReady && composer) {
-                composer.render(delta || 0);
-            } else {
-                renderer.render(scene, camera);
+            try {
+                if (usePostProcessing && postProcessingReady && composer) {
+                    composer.render(delta || 0);
+                } else {
+                    renderer.render(scene, camera);
+                }
+            } catch (e) {
+                // A transient composer error must not freeze the animation loop:
+                // disable post-processing and fall back to a plain render.
+                usePostProcessing = false;
+                try { renderer.render(scene, camera); } catch (e2) { /* give up this frame */ }
             }
         }
 
@@ -1780,6 +1847,8 @@
                 t.repeat.set(repeat, repeat);
                 t.anisotropy = maxAniso();
                 t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+                // Cached & reused across many objects — must survive disposeObject3D().
+                t.userData.shared = true;
                 return t;
             }
             return {
@@ -3558,12 +3627,12 @@
         }
         
         // ============= OBSTACLES =============
-        function createObstacle(z) {
+        function createObstacle(z, forcedX) {
             const level = CONFIG.levels[state.currentLevel];
             const type = Math.random() > 0.35 ? 'rock' : 'hole';
-            
+
             let mesh;
-            const x = (Math.random() - 0.5) * 14;
+            const x = (forcedX !== undefined) ? forcedX : (Math.random() - 0.5) * 14;
             
             if (type === 'rock') {
                 const rockSize = 0.7 + Math.random() * 1.0;
@@ -3594,7 +3663,7 @@
                 mesh.position.set(x, terrainHeight + rockSize * 0.3, z);
                 mesh.rotation.set(Math.random(), Math.random(), Math.random());
                 mesh.castShadow = true;
-                mesh.userData = { type: 'rock', radius: rockSize + 0.3 };
+                mesh.userData = { type: 'rock', radius: rockSize + 0.3, yOffset: rockSize * 0.3 };
             } else {
                 const holeSize = 1.0 + Math.random() * 0.6;
                 const geom = new THREE.CircleGeometry(holeSize, 16);
@@ -3606,7 +3675,7 @@
                 mesh.rotation.x = -Math.PI / 2;
                 const terrainHeight = getTerrainHeight(x, z);
                 mesh.position.set(x, terrainHeight + 0.02, z);
-                mesh.userData = { type: 'hole', radius: holeSize };
+                mesh.userData = { type: 'hole', radius: holeSize, yOffset: 0.02 };
             }
             
             return mesh;
@@ -3643,8 +3712,8 @@
             
             const terrainHeight = getTerrainHeight(x, z);
             group.position.set(x, terrainHeight + 0.4, z);
-            group.userData = { radius: 1.5 };
-            
+            group.userData = { radius: 1.5, yOffset: 0.4 };
+
             return group;
         }
         
@@ -3681,8 +3750,42 @@
 
             const terrainHeight = getTerrainHeight(x, z);
             group.position.set(x, terrainHeight + 1.0, z);
-            group.userData = { radius: 1.4, powerupType: type };
+            group.userData = { radius: 1.4, powerupType: type, yOffset: 1.0 };
             return group;
+        }
+
+        // ============= OBJECT POOLS (endless mode) =============
+        // Reusable buckets so the endless loop stops allocating fresh geometry/materials
+        // every frame. Pooled objects keep whatever shape/colour they were built with;
+        // for endless gameplay that variety is acceptable, and it avoids GPU churn.
+        const obstaclePool = [], fuelCanPool = [], powerupPool = [];
+
+        function reposition(obj, z) {
+            const x = (Math.random() - 0.5) * 14;
+            const h = getTerrainHeight(x, z);
+            obj.position.set(x, h + (obj.userData.yOffset || 0.4), z);
+            obj.visible = true;
+        }
+
+        function acquireObstacle(z) {
+            const o = obstaclePool.pop();
+            if (o) { reposition(o, z); return o; }
+            return createObstacle(z);
+        }
+        function acquireFuelCan(z) {
+            const o = fuelCanPool.pop();
+            if (o) { reposition(o, z); return o; }
+            return createFuelCan(z);
+        }
+        function acquirePowerup(z, type) {
+            // Only reuse a pooled power-up if its type matches (effect depends on type).
+            const idx = powerupPool.findIndex(p => p.userData.powerupType === type);
+            if (idx !== -1) {
+                const o = powerupPool.splice(idx, 1)[0];
+                reposition(o, z);
+                return o;
+            }
+            return createPowerup(z, type);
         }
 
         // ============= SMOKE PARTICLES (damage indicator) =============
@@ -4145,28 +4248,53 @@
             return particles;
         }
         
+        // Free GPU memory held by an object tree. Shared TextureFactory maps are flagged
+        // userData.shared so we never dispose a cached texture other objects still use.
+        function disposeObject3D(obj) {
+            if (!obj) return;
+            try {
+                obj.traverse(node => {
+                    if (node.geometry) node.geometry.dispose();
+                    const mats = Array.isArray(node.material) ? node.material : (node.material ? [node.material] : []);
+                    mats.forEach(m => {
+                        for (const key in m) {
+                            const val = m[key];
+                            if (val && val.isTexture && !(val.userData && val.userData.shared)) val.dispose();
+                        }
+                        m.dispose();
+                    });
+                });
+            } catch (e) { /* disposal is best-effort; never block a level reload */ }
+        }
+
         // ============= LEVEL SETUP =============
         function setupLevel() {
             terrain.forEach(t => {
-                scene.remove(t.surface);
-                scene.remove(t.base);
+                scene.remove(t.surface); disposeObject3D(t.surface);
+                scene.remove(t.base); disposeObject3D(t.base);
             });
-            obstacles.forEach(o => scene.remove(o));
-            fuelCans.forEach(f => scene.remove(f));
-            powerups.forEach(p => scene.remove(p));
-            decorations.forEach(d => scene.remove(d));
-            stars.forEach(s => scene.remove(s));
-            clouds.forEach(c => scene.remove(c));
-            mountains.forEach(m => scene.remove(m));
+            obstacles.forEach(o => { scene.remove(o); disposeObject3D(o); });
+            fuelCans.forEach(f => { scene.remove(f); disposeObject3D(f); });
+            powerups.forEach(p => { scene.remove(p); disposeObject3D(p); });
+            decorations.forEach(d => { scene.remove(d); disposeObject3D(d); });
+            stars.forEach(s => { scene.remove(s); disposeObject3D(s); });
+            clouds.forEach(c => { scene.remove(c); disposeObject3D(c); });
+            mountains.forEach(m => { scene.remove(m); disposeObject3D(m); });
+            // Drain endless-mode pools so stale (possibly wrong-level-coloured) objects
+            // from a previous run don't leak into the new level.
+            obstaclePool.forEach(o => disposeObject3D(o)); obstaclePool.length = 0;
+            fuelCanPool.forEach(o => disposeObject3D(o)); fuelCanPool.length = 0;
+            powerupPool.forEach(o => disposeObject3D(o)); powerupPool.length = 0;
             if (dustParticles) {
                 if (dustParticles.parent) dustParticles.parent.remove(dustParticles);
-                scene.remove(dustParticles);
+                scene.remove(dustParticles); disposeObject3D(dustParticles);
             }
             if (smokeParticles) {
                 if (smokeParticles.parent) smokeParticles.parent.remove(smokeParticles);
+                disposeObject3D(smokeParticles);
                 smokeParticles = null;
             }
-            if (goalMarker) scene.remove(goalMarker);
+            if (goalMarker) { scene.remove(goalMarker); disposeObject3D(goalMarker); }
 
             terrain = [];
             obstacles = [];
@@ -4248,9 +4376,18 @@
             const powerupEnd = isEndless ? 800 : level.distance - 60;
             const decorEnd = isEndless ? 800 : level.distance - 150;
 
+            // Spawn obstacles, but constrain each one's x to stay within a reachable
+            // distance of the previous obstacle so the player always has a dodge path
+            // (no impossible full-width crossings between two close rows).
+            let lastObstacleX = 0;
+            const maxStep = 6;   // max horizontal shift allowed between consecutive obstacles
             for (let z = 50; z < obstacleEnd; z += 18) {
                 if (Math.random() < level.obstacleFrequency) {
-                    const obstacle = createObstacle(z);
+                    let x = (Math.random() - 0.5) * 14;
+                    x = Math.max(lastObstacleX - maxStep, Math.min(lastObstacleX + maxStep, x));
+                    x = Math.max(-7, Math.min(7, x));
+                    lastObstacleX = x;
+                    const obstacle = createObstacle(z, x);
                     obstacles.push(obstacle);
                     scene.add(obstacle);
                 }
@@ -4436,6 +4573,7 @@
                 if (dustParticles && dustParticles.parent === vehicle) vehicle.remove(dustParticles);
                 if (smokeParticles && smokeParticles.parent === vehicle) vehicle.remove(smokeParticles);
                 scene.remove(vehicle);
+                disposeObject3D(vehicle);   // free the old vehicle's geometry/materials
             }
             vehicle = buildPlayerVehicle(def.id);
             scene.add(vehicle);
@@ -4509,6 +4647,32 @@
                     togglePause();
                 }
             });
+
+            // On-screen steering buttons (touch devices). Press-and-hold sets steering
+            // to the max angle in that direction; releasing recentres it. This reuses the
+            // same targetSteering channel as swipe/keyboard so all inputs stay consistent.
+            // Visibility is toggled alongside the pause button during gameplay (see below).
+            if (steerButtonsEl && isTouchDevice) {
+                const bindSteer = (btn, dir) => {
+                    if (!btn) return;
+                    const press = (e) => {
+                        e.preventDefault();
+                        if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
+                        state.targetSteering = dir * CONFIG.vehicle.maxSteerAngle;
+                        btn.classList.add('pressed');
+                    };
+                    const release = (e) => {
+                        if (e) e.preventDefault();
+                        state.targetSteering = 0;
+                        btn.classList.remove('pressed');
+                    };
+                    btn.addEventListener('touchstart', press, { passive: false });
+                    btn.addEventListener('touchend', release, { passive: false });
+                    btn.addEventListener('touchcancel', release, { passive: false });
+                };
+                bindSteer(document.getElementById('steerLeftBtn'), 1);
+                bindSteer(document.getElementById('steerRightBtn'), -1);
+            }
         }
         
         // ============= COLLISION DETECTION =============
@@ -4523,7 +4687,7 @@
                 const dz = vehiclePos.z - obstacle.position.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
 
-                if (dist < obstacle.userData.radius + 1.0) {
+                if (dist < obstacle.userData.radius + CONFIG.vehicle.collisionHalfWidth) {
                     if (now - state.lastCollisionTime > 500) {
                         // Shield absorbs hit
                         if (state.shielded) {
@@ -4589,6 +4753,9 @@
                 const dist = Math.sqrt(dx * dx + dz * dz);
 
                 if (dist < fuelCan.userData.radius + 1.0) {
+                    // baseAmt already reflects the doubler when active, so the displayed
+                    // number matches the fuel actually added (fixes the old no-op ternary
+                    // that always showed the same text and read fuelDoubler after reset).
                     const baseAmt = state.fuelDoubler ? CONFIG.powerups.fuelDoublerAmount : 10;
                     state.fuel = Math.min(state.maxFuel, state.fuel + baseAmt);
                     state.hp = Math.min(state.maxHp, state.hp + CONFIG.damage.hpFromFuelCan);
@@ -4596,7 +4763,7 @@
                     state.fuelDoubler = false;
                     audio.playFuelPickup();
 
-                    fuelNotification.textContent = state.fuelDoubler ? `⛽ +${baseAmt}% وقود!` : `⛽ +${baseAmt}% وقود!`;
+                    fuelNotification.textContent = `⛽ +${baseAmt}% وقود!`;
                     fuelNotification.style.display = 'block';
                     setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
 
@@ -4713,15 +4880,13 @@
         function updateHUD() {
             const fuelPct = Math.max(0, (state.fuel / state.maxFuel) * 100);
             fuelFill.style.width = `${fuelPct}%`;
-            if (fuelPct > 50) fuelFill.style.background = 'linear-gradient(90deg, #44ff44, #88ff88)';
-            else if (fuelPct > 25) fuelFill.style.background = 'linear-gradient(90deg, #ffaa00, #ffcc00)';
-            else fuelFill.style.background = 'linear-gradient(90deg, #ff4444, #ff6666)';
+            fuelFill.style.background = barColor(fuelPct);
 
             const hpPct = Math.max(0, (state.hp / state.maxHp) * 100);
             hpFill.style.width = `${hpPct}%`;
-            if (hpPct > 50) hpFill.style.background = 'linear-gradient(90deg, #44ff44, #88ff88)';
-            else if (hpPct > 25) hpFill.style.background = 'linear-gradient(90deg, #ffaa00, #ffcc00)';
-            else hpFill.style.background = 'linear-gradient(90deg, #ff4444, #ff6666)';
+            hpFill.style.background = barColor(hpPct);
+            // Flash the HP bar when death is imminent.
+            if (hpBar) hpBar.classList.toggle('critical', hpPct <= 25 && hpPct > 0);
 
             if (state.mode === 'endless') {
                 const best = SaveSystem.data.endless.bestDistance || 0;
@@ -4877,17 +5042,19 @@
             
             if (state.cameraRotating) {
                 updateCameraRotation(delta);
-                
+
+                const ct = fxUniforms.uTime.value;
+                const cbob = Math.sin(ct * 3) * 0.15;
                 fuelCans.forEach(can => {
                     can.rotation.y += delta * 2;
-                    can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + Math.sin(Date.now() * 0.003) * 0.15;
+                    can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + cbob;
                 });
-                
+
                 const level = CONFIG.levels[state.currentLevel];
                 if (level.timeOfDay === 'night' && stars[0]) {
-                    stars[0].material.opacity = 0.6 + Math.sin(Date.now() * 0.003) * 0.3;
+                    stars[0].material.opacity = 0.6 + Math.sin(ct * 3) * 0.3;
                 }
-                
+
                 renderFrame(delta);
                 return;
             }
@@ -4899,7 +5066,10 @@
             
             const level = CONFIG.levels[state.currentLevel];
 
-            state.steering += (state.targetSteering - state.steering) * (1 - CONFIG.vehicle.steeringDamping);
+            // Frame-rate-independent steering smoothing: the per-frame blend is scaled by
+            // delta so turning feels identical at 30fps and 144fps (no more 8-frame lag).
+            const steerBlend = 1 - Math.pow(CONFIG.vehicle.steeringDamping, delta * 60);
+            state.steering += (state.targetSteering - state.steering) * steerBlend;
 
             // Vehicle stats + boost multiplier
             const baseSpeed = state.activeVehicle ? state.activeVehicle.stats.topSpeed : CONFIG.vehicle.speed;
@@ -4930,20 +5100,20 @@
                 // Difficulty scaling: spawn more obstacles ahead
                 if (Math.random() < 0.04 + Math.min(0.08, state.distance / 30000)) {
                     const z = vehicle.position.z + 200 + Math.random() * 100;
-                    const obs = createObstacle(z);
+                    const obs = acquireObstacle(z);
                     obstacles.push(obs);
                     scene.add(obs);
                 }
                 if (Math.random() < 0.02) {
                     const z = vehicle.position.z + 200 + Math.random() * 100;
-                    const fc = createFuelCan(z);
+                    const fc = acquireFuelCan(z);
                     fuelCans.push(fc);
                     scene.add(fc);
                 }
                 if (Math.random() < 0.012) {
                     const z = vehicle.position.z + 200 + Math.random() * 100;
                     const types = ['boost', 'fuel', 'shield'];
-                    const p = createPowerup(z, types[Math.floor(Math.random() * 3)]);
+                    const p = acquirePowerup(z, types[Math.floor(Math.random() * 3)]);
                     powerups.push(p);
                     scene.add(p);
                 }
@@ -4974,29 +5144,34 @@
                         geo.computeVertexNormals();
                     }
                 });
-                // Cleanup off-screen obstacles/fuel/powerups
+                // Cleanup off-screen obstacles/fuel/powerups — recycle into pools
+                // instead of discarding, so geometry/materials are reused next spawn.
+                const cutoff = vehicle.position.z - 30;
                 for (let i = obstacles.length - 1; i >= 0; i--) {
-                    if (obstacles[i].position.z < vehicle.position.z - 30) {
+                    if (obstacles[i].position.z < cutoff) {
                         scene.remove(obstacles[i]);
+                        obstaclePool.push(obstacles[i]);
                         obstacles.splice(i, 1);
                     }
                 }
                 for (let i = fuelCans.length - 1; i >= 0; i--) {
-                    if (fuelCans[i].position.z < vehicle.position.z - 30) {
+                    if (fuelCans[i].position.z < cutoff) {
                         scene.remove(fuelCans[i]);
+                        fuelCanPool.push(fuelCans[i]);
                         fuelCans.splice(i, 1);
                     }
                 }
                 for (let i = powerups.length - 1; i >= 0; i--) {
-                    if (powerups[i].position.z < vehicle.position.z - 30) {
+                    if (powerups[i].position.z < cutoff) {
                         scene.remove(powerups[i]);
+                        powerupPool.push(powerups[i]);
                         powerups.splice(i, 1);
                     }
                 }
             }
 
             vehicle.position.z += speed * delta;
-            state.distance = state.mode === 'endless' ? vehicle.position.z : vehicle.position.z;
+            state.distance = vehicle.position.z;
 
             vehicle.position.x += state.steering * speed * delta;
             vehicle.position.x = Math.max(-25, Math.min(25, vehicle.position.x));
@@ -5056,26 +5231,30 @@
             updateDustParticles(delta);
             updateCargo(delta);
 
+            // Shared animation clock (seconds) — replaces repeated Date.now() calls.
+            const t = fxUniforms.uTime.value;
+            const bob = Math.sin(t * 3) * 0.15;
             fuelCans.forEach(can => {
                 can.rotation.y += delta * 2;
-                can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + Math.sin(Date.now() * 0.003) * 0.15;
+                can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + bob;
                 if (can.glowMesh) {
-                    can.glowMesh.material.opacity = 0.15 + Math.sin(Date.now() * 0.005) * 0.1;
+                    can.glowMesh.material.opacity = 0.15 + Math.sin(t * 5) * 0.1;
                 }
             });
 
             // Animate powerups
+            const pBob = Math.sin(t * 4) * 0.2;
             powerups.forEach(p => {
                 p.rotation.y += delta * 1.5;
                 if (p.innerMesh) p.innerMesh.rotation.x += delta * 2.5;
-                p.position.y = getTerrainHeight(p.position.x, p.position.z) + 1.0 + Math.sin(Date.now() * 0.004) * 0.2;
+                p.position.y = getTerrainHeight(p.position.x, p.position.z) + 1.0 + pBob;
                 if (p.glowMesh) {
-                    p.glowMesh.material.opacity = 0.2 + Math.sin(Date.now() * 0.006) * 0.15;
+                    p.glowMesh.material.opacity = 0.2 + Math.sin(t * 6) * 0.15;
                 }
             });
 
             if (level.timeOfDay === 'night' && stars[0]) {
-                stars[0].material.opacity = 0.6 + Math.sin(Date.now() * 0.003) * 0.3;
+                stars[0].material.opacity = 0.6 + Math.sin(t * 3) * 0.3;
             }
 
             const fuelEff = state.activeVehicle ? state.activeVehicle.stats.fuelEfficiency : 1.0;
@@ -5109,6 +5288,7 @@
             audio.playCelebration();
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
+            if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
 
             // Save best times + unlock achievements
             const lvl = state.currentLevel;
@@ -5152,6 +5332,7 @@
             audio.stopEngine();
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
+            if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
 
             // Save endless best
             if (state.mode === 'endless') {
@@ -5196,6 +5377,7 @@
             setupLevel();
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
+            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
             audio.startEngine();
         }
 
@@ -5208,6 +5390,7 @@
             tutorialModal.style.display = 'none';
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
+            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
             touchHint.style.display = 'block';
 
             audio.init();
@@ -5252,6 +5435,7 @@
             setupLevel();
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
+            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
             audio.startEngine();
         }
 
@@ -5269,6 +5453,7 @@
             pauseMenu.style.display = 'none';
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
+            if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
             startScreen.style.display = 'flex';
             state.isPlaying = false;
             state.isPaused = false;
