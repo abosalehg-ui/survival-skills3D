@@ -3678,7 +3678,11 @@
             for (let i = 0; i < positions.length; i += 3) {
                 const x = positions[i];
                 const localZ = positions[i + 1];
-                const worldZ = zPosition + localZ;
+                // The mesh is rotated -PI/2 about X, so a vertex with plane-y = localZ ends
+                // up at world Z = zPosition - localZ. Sample the height field at that SAME
+                // world Z so the visible sand matches getTerrainHeight() used by the car
+                // (otherwise the surface is z-mirrored and the car sinks into hills).
+                const worldZ = zPosition - localZ;
                 const hgt = getTerrainHeight(x, worldZ);
                 positions[i + 2] = hgt;
                 // crest (high) -> ~1.12, valley (low) -> ~0.88, plus a little grain
@@ -5241,7 +5245,8 @@
                         for (let i = 0; i < positions.length; i += 3) {
                             const x = positions[i];
                             const localZ = positions[i + 1];
-                            const hgt = getTerrainHeight(x, newZ + localZ);
+                            // Match the world Z of the rotated vertex (see createTerrainChunk).
+                            const hgt = getTerrainHeight(x, newZ - localZ);
                             positions[i + 2] = hgt;
                             if (colAttr) {
                                 const tt = Math.max(-1, Math.min(1, hgt / (duneRef + 0.001)));
@@ -5307,8 +5312,10 @@
                     state.isGrounded = false;
                     state.vehicleVelocityY = 0;
                 }
+                // Safety: never let follow-lag pull the car below the ground on a climb.
+                if (state.vehicleY < targetHeight) state.vehicleY = targetHeight;
             }
-            
+
             vehicle.position.y = state.vehicleY;
 
             // Pitch (nose up/down over dunes) sampled fore/aft, and roll from the
