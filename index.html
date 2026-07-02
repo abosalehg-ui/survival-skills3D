@@ -1536,13 +1536,17 @@
             fuelCansCollected: 0,
             damageTakenThisLevel: false,
 
-            // Power-ups
-            boostExpires: 0,               // performance.now() timestamp
+            // Power-ups. Expiry times are in game-time seconds (compared against
+            // timeElapsed, which only advances during play) so pausing freezes
+            // the remaining duration instead of letting it run out.
+            boostUntil: 0,
             fuelDoubler: false,
             shielded: false,
 
-            // Sandstorm
+            // Sandstorm (sandstormUntil is game-time; used by endless mode only —
+            // story-mode storms last the whole level)
             sandstormActive: false,
+            sandstormUntil: 0,
 
             // Endless mode
             endlessSandstormNext: 0,
@@ -1578,6 +1582,9 @@
         let postProcessingReady = false;
         let pmremGenerator = null, envRT = null;
         let skyDome = null;
+        let sunLight = null;         // level sun/moon — followed in gameLoop so shadows track the car
+        let badgeAccum = 0;          // fixed-cadence effect-badge refresh timer
+        let idleFrameToggle = false; // half-rate rendering while in menus/pause
         // Shared uniforms for vertex-shader animation (palm sway, etc.)
         const fxUniforms = { uTime: { value: 0 } };
 
@@ -3664,7 +3671,54 @@
 
             return lateral + hills;
         }
-        
+
+        // Analytic ∂h/∂x, ∂h/∂z of getTerrainHeight — the two functions MUST stay
+        // in sync (same waves, same road damping). Writing vertex normals from the
+        // exact slope replaces the full computeVertexNormals() pass that caused a
+        // visible hitch every time an endless-mode chunk recycled, and it removes
+        // the lighting seams computeVertexNormals produced at chunk borders.
+        const _slope = { dx: 0, dz: 0 };
+        function getTerrainSlope(x, z) {
+            const level = CONFIG.levels[state.currentLevel];
+            const dune = level.duneHeight;
+
+            const a1 = x * 0.06 + z * 0.025;
+            const a2 = x * 0.04 + z * 0.04;
+            const a3 = x * 0.12 + z * 0.06;
+            const lateral = Math.sin(a1) * dune + Math.cos(a2) * dune * 0.5 + Math.sin(a3) * dune * 0.25;
+            const lx = Math.cos(a1) * 0.06 * dune - Math.sin(a2) * 0.04 * dune * 0.5 + Math.cos(a3) * 0.12 * dune * 0.25;
+            const lz = Math.cos(a1) * 0.025 * dune - Math.sin(a2) * 0.04 * dune * 0.5 + Math.cos(a3) * 0.06 * dune * 0.25;
+
+            const roadWidth = level.narrowPath ? 6 : 10;
+            const w2 = roadWidth * roadWidth;
+            const roadFactor = Math.exp(-(x * x) / w2);
+            const damp = 1 - roadFactor * 0.7;
+
+            // d/dx [lateral * damp] = lx*damp + lateral * 0.7 * roadFactor * 2x/w2
+            _slope.dx = lx * damp + lateral * 1.4 * roadFactor * x / w2;
+            _slope.dz = lz * damp
+                - Math.sin(z * 0.05 - 0.4) * 0.05 * dune * 0.6
+                + Math.cos(z * 0.11 + 1.3) * 0.11 * dune * 0.85
+                + Math.cos(z * 0.21 + 0.6) * 0.21 * dune * 0.4;
+            return _slope;
+        }
+
+        // Fill a terrain chunk's normal attribute from the analytic slope. The
+        // plane is rotated -PI/2 about X, so plane-local (x, y) maps to world
+        // (x, zPosition - y) and the world normal (-dx, 1, -dz) is local (-dx, dz, 1).
+        function applyTerrainNormals(geometry, zPosition) {
+            const pos = geometry.attributes.position.array;
+            const nrm = geometry.attributes.normal;
+            for (let i = 0; i < pos.length; i += 3) {
+                const s = getTerrainSlope(pos[i], zPosition - pos[i + 1]);
+                const inv = 1 / Math.sqrt(s.dx * s.dx + s.dz * s.dz + 1);
+                nrm.array[i] = -s.dx * inv;
+                nrm.array[i + 1] = s.dz * inv;
+                nrm.array[i + 2] = inv;
+            }
+            nrm.needsUpdate = true;
+        }
+
         function createTerrainChunk(zPosition, chunkIndex) {
             const level = CONFIG.levels[state.currentLevel];
             
@@ -3691,7 +3745,7 @@
                 colors[i] = colors[i + 1] = colors[i + 2] = shade;
             }
             geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-            geometry.computeVertexNormals();
+            applyTerrainNormals(geometry, zPosition);
 
             const sandColors = {
                 morning: 0xE8D4A8,
@@ -3997,9 +4051,8 @@
         // ============= EFFECT BADGES =============
         function updateEffectBadges() {
             const badges = [];
-            const now = performance.now();
-            if (state.boostExpires > now) {
-                const remaining = Math.ceil((state.boostExpires - now) / 1000);
+            if (state.boostUntil > state.timeElapsed) {
+                const remaining = Math.ceil(state.boostUntil - state.timeElapsed);
                 badges.push({ cls: 'boost', text: `⚡ تعزيز ${remaining}s` });
             }
             if (state.shielded) badges.push({ cls: 'shield', text: '🛡 درع نشط' });
@@ -4422,6 +4475,9 @@
             const exposureByTime = { morning: 1.2, afternoon: 1.25, sunset: 1.1, night: 1.15 };
             renderer.toneMappingExposure = exposureByTime[level.timeOfDay] || 1.15;
 
+            // The sun's shadow target is a plain Object3D — the light filter below
+            // wouldn't remove it, so detach it explicitly before rebuilding.
+            if (sunLight) { scene.remove(sunLight.target); sunLight = null; }
             scene.children = scene.children.filter(c => !(c instanceof THREE.Light) || c.parent === vehicle);
 
             // Hemisphere light: sky-tinted from above, sand-tinted bounce from below.
@@ -4438,11 +4494,13 @@
 
             // At night this acts as broad MOONLIGHT (DirectionalLight is distance-independent,
             // so it reliably lights the whole terrain unlike the old weak point light).
-            const sunLight = new THREE.DirectionalLight(
+            sunLight = new THREE.DirectionalLight(
                 level.timeOfDay === 'night' ? 0x9fb0e6 : 0xfff2dd,
                 level.timeOfDay === 'night' ? 1.15 : level.sunIntensity * 1.4
             );
             sunLight.position.set(level.timeOfDay === 'afternoon' ? -40 : 40, 60, 40);
+            // The light and its target travel with the car in gameLoop — a fixed
+            // shadow frustum around the origin lost all shadows after ~60u.
             sunLight.castShadow = true;
             const shadowRes = (SaveSystem.data && SaveSystem.data.settings.quality === 'high') ? 2048 : 1024;
             sunLight.shadow.mapSize.width = shadowRes;
@@ -4456,6 +4514,7 @@
             sunLight.shadow.bias = -0.0005;
             sunLight.shadow.normalBias = 0.02;
             scene.add(sunLight);
+            scene.add(sunLight.target);
             
             // Add mountains
             const mountainGroup = createMountains();
@@ -4636,12 +4695,13 @@
             state.timeElapsed = 0;
             state.fuelCansCollected = 0;
             state.damageTakenThisLevel = false;
-            state.boostExpires = 0;
+            state.boostUntil = 0;
             state.fuelDoubler = false;
             state.shielded = false;
 
             // Sandstorm setup
             state.sandstormActive = level.weather === 'sandstorm';
+            state.sandstormUntil = 0;
             if (state.mode === 'endless') {
                 state.endlessSandstormNext = 1200 + Math.random() * 800;
             }
@@ -4802,6 +4862,15 @@
                 const dist = Math.sqrt(dx * dx + dz * dz);
 
                 if (dist < obstacle.userData.radius + CONFIG.vehicle.collisionHalfWidth) {
+                    // Vertical check: a car flying over an obstacle clears it.
+                    // Holes only catch a grounded car; rocks are cleared when the
+                    // wheels are above the boulder's top.
+                    if (obstacle.userData.type === 'hole') {
+                        if (!state.isGrounded) continue;
+                    } else {
+                        const obstacleTop = obstacle.position.y + obstacle.userData.radius;
+                        if (vehiclePos.y - CONFIG.vehicle.groundOffset > obstacleTop) continue;
+                    }
                     if (now - state.lastCollisionTime > 500) {
                         // Shield absorbs hit
                         if (state.shielded) {
@@ -4901,7 +4970,7 @@
                 if (dist < p.userData.radius + 1.0) {
                     const type = p.userData.powerupType;
                     if (type === 'boost') {
-                        state.boostExpires = performance.now() + CONFIG.powerups.boostDuration * 1000;
+                        state.boostUntil = state.timeElapsed + CONFIG.powerups.boostDuration;
                     } else if (type === 'fuel') {
                         state.fuelDoubler = true;
                     } else if (type === 'shield') {
@@ -5146,7 +5215,15 @@
         // ============= GAME LOOP =============
         function gameLoop() {
             requestAnimationFrame(gameLoop);
-            
+
+            // Menus and pause don't need 60fps: render every other frame to save
+            // battery. The clock keeps accumulating, so cloud drift and the sky
+            // stay at the right speed on the frames that do render.
+            if ((!state.isPlaying && !state.cameraRotating) || state.isPaused) {
+                idleFrameToggle = !idleFrameToggle;
+                if (idleFrameToggle) return;
+            }
+
             const delta = Math.min(clock.getDelta(), 0.05);
             fxUniforms.uTime.value += delta;
 
@@ -5187,7 +5264,7 @@
 
             // Vehicle stats + boost multiplier
             const baseSpeed = state.activeVehicle ? state.activeVehicle.stats.topSpeed : CONFIG.vehicle.speed;
-            const boostActive = state.boostExpires > performance.now();
+            const boostActive = state.boostUntil > state.timeElapsed;
             const speed = baseSpeed * (boostActive ? CONFIG.powerups.boostMultiplier : 1.0);
 
             // Mode-specific tick
@@ -5200,16 +5277,17 @@
                 }
             }
             if (state.mode === 'endless') {
-                // Periodic sandstorms
+                // Periodic sandstorms. Expiry runs on game time (not setTimeout),
+                // so pausing mid-storm freezes the remaining duration.
                 if (!state.sandstormActive && state.distance > state.endlessSandstormNext) {
                     state.sandstormActive = true;
+                    state.sandstormUntil = state.timeElapsed + 12;
                     updateEffectBadges();
-                    setTimeout(() => {
-                        state.sandstormActive = false;
-                        state.endlessSandstormNext = state.distance + 1200 + Math.random() * 1000;
-                        unlockAchievement('storm_survivor');
-                        updateEffectBadges();
-                    }, 12000);
+                } else if (state.sandstormActive && state.timeElapsed >= state.sandstormUntil) {
+                    state.sandstormActive = false;
+                    state.endlessSandstormNext = state.distance + 1200 + Math.random() * 1000;
+                    unlockAchievement('storm_survivor');
+                    updateEffectBadges();
                 }
                 // Difficulty scaling: spawn more obstacles ahead
                 if (Math.random() < 0.04 + Math.min(0.08, state.distance / 30000)) {
@@ -5256,7 +5334,7 @@
                         }
                         geo.attributes.position.needsUpdate = true;
                         if (colAttr) colAttr.needsUpdate = true;
-                        geo.computeVertexNormals();
+                        applyTerrainNormals(geo, newZ);
                     }
                 });
                 // Cleanup off-screen obstacles/fuel/powerups — recycle into pools
@@ -5350,7 +5428,15 @@
             camera.position.y = state.cameraY;
             camera.position.z = vehicle.position.z - 14;
             camera.lookAt(vehicle.position.x * 0.5, vehicle.position.y + 2, vehicle.position.z + 18);
-            
+
+            // The sun/moon (and its shadow frustum) travels with the car; with a
+            // fixed light the car drove out of the frustum and shadows vanished
+            // ~60u into every level.
+            if (sunLight) {
+                sunLight.position.z = vehicle.position.z + 40;
+                sunLight.target.position.z = vehicle.position.z;
+            }
+
             // Move mountains and clouds with camera (parallax)
             mountains.forEach(m => {
                 m.position.z = vehicle.position.z;
@@ -5395,8 +5481,13 @@
 
             audio.updateEngine(speed, state.steering);
 
-            // Refresh effect badges every ~10 frames for boost countdown
-            if (Math.random() < 0.1) updateEffectBadges();
+            // Refresh effect badges on a fixed cadence so the boost countdown
+            // ticks steadily (was Math.random() < 0.1 → jittery updates).
+            badgeAccum += delta;
+            if (badgeAccum >= 0.15) {
+                badgeAccum = 0;
+                updateEffectBadges();
+            }
 
             updateHUD();
 
