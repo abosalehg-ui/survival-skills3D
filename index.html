@@ -1514,14 +1514,12 @@
             steering: 0,
             targetSteering: 0,
             touchStartX: 0,
-            gameOver: false,
             vehicleVelocityY: 0,
             vehicleY: 0,
             isGrounded: true,
             cameraY: 7,                    // smoothed camera height (lags vehicle so bobbing shows)
             lastTrackZ: -999,              // last z where a tire-track pair was dropped
             trackIndex: 0,                 // ring-buffer cursor into the tire-track pool
-            cargoItems: [],
             lastCollisionTime: 0,
             cameraRotating: false,
             cameraRotationStart: 0,
@@ -1550,9 +1548,7 @@
 
             // Endless mode
             endlessSandstormNext: 0,
-
-            // Smoke particles container
-            smokeParticles: null,
+            endlessLastObstacleX: 0,   // reachability anchor for runtime obstacle spawns
 
             // Pre-game UI flow
             pendingMode: 'story',
@@ -1584,6 +1580,9 @@
         let skyDome = null;
         let sunLight = null;         // level sun/moon — followed in gameLoop so shadows track the car
         let badgeAccum = 0;          // fixed-cadence effect-badge refresh timer
+        // Hide-timers for transient toasts. Kept so a rapid second toast cancels the
+        // first one's pending hide instead of being blanked early by it.
+        let fuelNotifTimer = 0, achievementToastTimer = 0;
         let idleFrameToggle = false; // half-rate rendering while in menus/pause
         // Shared uniforms for vertex-shader animation (palm sway, etc.)
         const fxUniforms = { uTime: { value: 0 } };
@@ -1779,6 +1778,7 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
             if (composer) composer.setSize(window.innerWidth, window.innerHeight);
             if (bloomPass) bloomPass.setSize(window.innerWidth, window.innerHeight);
+            if (smaaPass) smaaPass.setSize(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
         }
         
         // ============= PROCEDURAL TEXTURES (canvas-generated, no external assets) =============
@@ -3915,17 +3915,17 @@
         // for endless gameplay that variety is acceptable, and it avoids GPU churn.
         const obstaclePool = [], fuelCanPool = [], powerupPool = [];
 
-        function reposition(obj, z) {
-            const x = (Math.random() - 0.5) * 14;
+        function reposition(obj, z, forcedX) {
+            const x = (forcedX !== undefined) ? forcedX : (Math.random() - 0.5) * 14;
             const h = getTerrainHeight(x, z);
             obj.position.set(x, h + (obj.userData.yOffset || 0.4), z);
             obj.visible = true;
         }
 
-        function acquireObstacle(z) {
+        function acquireObstacle(z, forcedX) {
             const o = obstaclePool.pop();
-            if (o) { reposition(o, z); return o; }
-            return createObstacle(z);
+            if (o) { reposition(o, z, forcedX); return o; }
+            return createObstacle(z, forcedX);
         }
         function acquireFuelCan(z) {
             const o = fuelCanPool.pop();
@@ -4035,7 +4035,8 @@
             achievementToast.style.animation = 'none';
             void achievementToast.offsetWidth;
             achievementToast.style.animation = 'popIn 0.4s ease';
-            setTimeout(() => { achievementToast.style.display = 'none'; }, 3000);
+            clearTimeout(achievementToastTimer);
+            achievementToastTimer = setTimeout(() => { achievementToast.style.display = 'none'; }, 3000);
         }
 
         function unlockAchievement(id) {
@@ -4478,7 +4479,11 @@
             // The sun's shadow target is a plain Object3D — the light filter below
             // wouldn't remove it, so detach it explicitly before rebuilding.
             if (sunLight) { scene.remove(sunLight.target); sunLight = null; }
-            scene.children = scene.children.filter(c => !(c instanceof THREE.Light) || c.parent === vehicle);
+            // Remove level lights through scene.remove() (direct children[] filtering
+            // left .parent dangling on the removed lights). Vehicle-attached lights
+            // are not direct scene children, so they survive untouched.
+            scene.children.filter(c => c instanceof THREE.Light)
+                .forEach(l => scene.remove(l));
 
             // Hemisphere light: sky-tinted from above, sand-tinted bounce from below.
             // Lower than the old flat ambient (0.5) because IBL now also adds sky-tinted fill.
@@ -4704,6 +4709,7 @@
             state.sandstormUntil = 0;
             if (state.mode === 'endless') {
                 state.endlessSandstormNext = 1200 + Math.random() * 800;
+                state.endlessLastObstacleX = 0;
             }
 
             // Time trial timer
@@ -4795,6 +4801,17 @@
                 state.targetSteering = 0;
             });
 
+            // Track held keys per direction so releasing one key doesn't cancel the
+            // other (old code zeroed steering on ANY steer-key keyup, so holding
+            // Left then tapping Right left the car going straight).
+            const steerKeys = { left: false, right: false };
+            const isLeftKey = (k) => k === 'ArrowLeft' || k === 'a' || k === 'A';
+            const isRightKey = (k) => k === 'ArrowRight' || k === 'd' || k === 'D';
+            const applyKeySteering = () => {
+                if (steerKeys.left === steerKeys.right) state.targetSteering = 0;
+                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle;
+            };
+
             document.addEventListener('keydown', (e) => {
                 // Pause toggle (works during play)
                 if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && state.isPlaying && !state.cameraRotating) {
@@ -4802,17 +4819,13 @@
                     return;
                 }
                 if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
-                if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-                    state.targetSteering = CONFIG.vehicle.maxSteerAngle;
-                } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-                    state.targetSteering = -CONFIG.vehicle.maxSteerAngle;
-                }
+                if (isLeftKey(e.key)) { steerKeys.left = true; applyKeySteering(); }
+                else if (isRightKey(e.key)) { steerKeys.right = true; applyKeySteering(); }
             });
 
             document.addEventListener('keyup', (e) => {
-                if (['ArrowLeft', 'a', 'A', 'ArrowRight', 'd', 'D'].includes(e.key)) {
-                    state.targetSteering = 0;
-                }
+                if (isLeftKey(e.key)) { steerKeys.left = false; applyKeySteering(); }
+                else if (isRightKey(e.key)) { steerKeys.right = false; applyKeySteering(); }
             });
 
             // Auto-pause on tab hidden
@@ -4948,7 +4961,8 @@
 
                     fuelNotification.textContent = `⛽ +${baseAmt}% وقود!`;
                     fuelNotification.style.display = 'block';
-                    setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
+                    clearTimeout(fuelNotifTimer);
+                    fuelNotifTimer = setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
 
                     scene.remove(fuelCan);
                     fuelCans.splice(i, 1);
@@ -5289,10 +5303,16 @@
                     unlockAchievement('storm_survivor');
                     updateEffectBadges();
                 }
-                // Difficulty scaling: spawn more obstacles ahead
+                // Difficulty scaling: spawn more obstacles ahead. Like story mode,
+                // each obstacle's x is kept within dodging reach of the previous one
+                // so runtime spawning never builds an impassable wall.
                 if (Math.random() < 0.04 + Math.min(0.08, state.distance / 30000)) {
                     const z = vehicle.position.z + 200 + Math.random() * 100;
-                    const obs = acquireObstacle(z);
+                    let x = (Math.random() - 0.5) * 14;
+                    x = Math.max(state.endlessLastObstacleX - 6, Math.min(state.endlessLastObstacleX + 6, x));
+                    x = Math.max(-7, Math.min(7, x));
+                    state.endlessLastObstacleX = x;
+                    const obs = acquireObstacle(z, x);
                     obstacles.push(obs);
                     scene.add(obs);
                 }
@@ -5619,7 +5639,6 @@
             applyVolumeFromSettings();
 
             state.isPlaying = true;
-            state.gameOver = false;
             state.isPaused = false;
             state.cameraRotating = false;
 
@@ -5640,15 +5659,12 @@
             winScreen.style.display = 'none';
             levelCompleteScreen.style.display = 'none';
 
-            // For story mode, go back to selected starting level
-            if (state.mode === 'story') {
-                state.currentLevel = state.pendingLevel;
-            } else if (state.mode === 'endless' || state.mode === 'timeTrial') {
-                state.currentLevel = state.pendingLevel;
-            }
+            // Restart the level the player is actually on. (state.currentLevel was
+            // previously reset to pendingLevel — the level chosen at session start —
+            // so dying on level 4 after starting at level 1 threw the player back
+            // to level 1 and lost the in-session progress.)
             state.isPlaying = true;
             state.isPaused = false;
-            state.gameOver = false;
             state.cameraRotating = false;
 
             clock.stop();
@@ -5913,17 +5929,20 @@
             // If in pause, re-show pause menu
             if (state.isPaused) showModal(pauseMenu);
         });
+        // Sliders: apply live on `input`, but persist to localStorage only on
+        // `change` (drag end) — writing the save blob on every input tick was
+        // needless synchronous I/O during the drag.
         document.getElementById('volumeSlider').addEventListener('input', (e) => {
             SaveSystem.data.settings.volume = parseInt(e.target.value) / 100;
             document.getElementById('volumeValue').textContent = e.target.value + '%';
             applyVolumeFromSettings();
-            SaveSystem.save();
         });
+        document.getElementById('volumeSlider').addEventListener('change', () => SaveSystem.save());
         document.getElementById('sensitivitySlider').addEventListener('input', (e) => {
             SaveSystem.data.settings.sensitivity = parseInt(e.target.value) / 100;
             document.getElementById('sensitivityValue').textContent = e.target.value + '%';
-            SaveSystem.save();
         });
+        document.getElementById('sensitivitySlider').addEventListener('change', () => SaveSystem.save());
         document.getElementById('qualitySelect').addEventListener('change', (e) => {
             SaveSystem.data.settings.quality = e.target.value;
             applyQualityFromSettings();
