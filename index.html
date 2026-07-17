@@ -3006,6 +3006,34 @@
             return group;
         }
         
+        // ============= SHARED VEHICLE MATERIALS =============
+        // The jeep / pickup / small-truck builders each allocated an identical set of
+        // non-body materials on EVERY call — and they're called many times (4 parked at
+        // each gas station, 6 at each camp, plus the player vehicle). Hoisting the
+        // byte-identical ones into a single memoized set removes that duplication (GPU
+        // programs + memory) with ZERO visual change: the properties are unchanged and
+        // vehicle materials are never mutated at runtime. Flagged userData.shared so
+        // disposeObject3D() never frees them when one vehicle instance is torn down.
+        let _vehMats = null;
+        function vehMats() {
+            if (_vehMats) return _vehMats;
+            const mk = (params) => { const m = new THREE.MeshStandardMaterial(params); m.userData.shared = true; return m; };
+            _vehMats = {
+                dark:       mk({ color: 0x1a1a1a, roughness: 0.9 }),
+                chrome:     mk({ color: 0xbbbbbb, metalness: 0.7, roughness: 0.4 }),
+                tailLight:  mk({ color: 0xff2222, emissive: 0x331111 }),
+                trim:       mk({ color: 0x2a2a2a, roughness: 0.7 }),
+                handle:     mk({ color: 0xcccccc, metalness: 0.85, roughness: 0.3 }),
+                indicator:  mk({ color: 0xff9933, emissive: 0x442211, roughness: 0.4 }),
+                lens:       mk({ color: 0xffffcc, emissive: 0x222200 }),
+                plate:      mk({ color: 0xeeeeee, roughness: 0.5 }),
+                exhaust:    mk({ color: 0x888888, metalness: 0.7, roughness: 0.5 }),
+                rim:        mk({ color: 0x999999, metalness: 0.6, roughness: 0.4 }),
+                mirrorGlass: mk({ color: 0x99bbcc, metalness: 0.9, roughness: 0.1 }),
+            };
+            return _vehMats;
+        }
+
         // ============= PARKED + PLAYABLE VEHICLES =============
         // Add playable contract (wheels/headlights/cargo/frontLight) to any model
         function addPlayableExtras(group, wheelPositions, frontZ) {
@@ -3047,10 +3075,11 @@
         function createOldJeep(color, opts = {}) {
             const playable = opts.playable;
             const group = new THREE.Group();
-            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });
-            const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-            const chromeMat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, metalness: 0.7, roughness: 0.4 });
-            const glassMat = new THREE.MeshStandardMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.5, metalness: 0.7, roughness: 0.2 });
+            const M = vehMats();
+            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.7 });   // body — per-instance colour
+            const darkMat = M.dark;
+            const chromeMat = M.chrome;
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.5, metalness: 0.7, roughness: 0.2 });   // opacity differs per vehicle
 
             // Body: y=0.5..1.3, z=-1.75..1.75
             const body = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.8, 3.5), mat);
@@ -3094,7 +3123,7 @@
                 const ring = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.018, 6, 14), chromeMat);
                 ring.position.set(x, 0.95, 1.81);
                 group.add(ring);
-                const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.03, 14), new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0x222200 }));
+                const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.03, 14), M.lens);
                 lens.rotation.x = Math.PI / 2;
                 lens.position.set(x, 0.95, 1.81);
                 group.add(lens);
@@ -3109,7 +3138,7 @@
             group.add(rb);
 
             // Tail lights
-            const tailLightMat = new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0x331111 });
+            const tailLightMat = M.tailLight;
             [-0.7, 0.7].forEach(x => {
                 const tl = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.04), tailLightMat);
                 tl.position.set(x, 0.95, -1.78);
@@ -3127,9 +3156,9 @@
             group.add(spareRim);
 
             // === ENHANCED DETAILS ===
-            const trimMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.7 });
-            const handleMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.85, roughness: 0.3 });
-            const indicatorMat = new THREE.MeshStandardMaterial({ color: 0xff9933, emissive: 0x442211, roughness: 0.4 });
+            const trimMat = M.trim;
+            const handleMat = M.handle;
+            const indicatorMat = M.indicator;
 
             // Hood ridge (center)
             const hoodRidge = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 1.6), mat);
@@ -3183,7 +3212,7 @@
             });
 
             // License plate (rear)
-            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.16, 0.02), new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5 }));
+            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.16, 0.02), M.plate);
             plate.position.set(0.3, 0.78, -1.84);
             group.add(plate);
 
@@ -3200,7 +3229,7 @@
             group.add(rollBar);
 
             // Exhaust pipe
-            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.35, 8), new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.7, roughness: 0.5 }));
+            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.35, 8), M.exhaust);
             exhaust.rotation.x = Math.PI / 2;
             exhaust.position.set(-0.7, 0.4, -1.95);
             group.add(exhaust);
@@ -3210,7 +3239,7 @@
             } else {
                 const wheelGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 14);
                 const rimGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.32, 10);
-                const rimMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.6, roughness: 0.4 });
+                const rimMat = M.rim;
                 [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]].forEach(pos => {
                     const wheel = new THREE.Mesh(wheelGeom, darkMat);
                     wheel.rotation.z = Math.PI / 2;
@@ -3229,10 +3258,11 @@
         function createPickupTruck(color, opts = {}) {
             const playable = opts.playable;
             const group = new THREE.Group();
-            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
-            const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-            const chromeMat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, metalness: 0.7, roughness: 0.4 });
-            const glassMat = new THREE.MeshStandardMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.6, metalness: 0.7, roughness: 0.2 });
+            const M = vehMats();
+            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });   // body — per-instance colour
+            const darkMat = M.dark;
+            const chromeMat = M.chrome;
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.6, metalness: 0.7, roughness: 0.2 });   // opacity differs per vehicle
 
             // Cabin: y=0.7..1.7, z=-0.1..1.7
             const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.0, 1.8), mat);
@@ -3304,7 +3334,7 @@
             group.add(tail);
 
             // Tail lights
-            const tailLightMat = new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0x331111 });
+            const tailLightMat = M.tailLight;
             [-0.7, 0.7].forEach(x => {
                 const tl = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.12, 0.05), tailLightMat);
                 tl.position.set(x, 0.88, -2.04);
@@ -3317,9 +3347,9 @@
             group.add(rbumper);
 
             // === ENHANCED DETAILS ===
-            const trimMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.7 });
-            const handleMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.85, roughness: 0.3 });
-            const indicatorMat = new THREE.MeshStandardMaterial({ color: 0xff9933, emissive: 0x442211, roughness: 0.4 });
+            const trimMat = M.trim;
+            const handleMat = M.handle;
+            const indicatorMat = M.indicator;
 
             // Hood scoop / center ridge
             const hoodRidge = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.9), mat);
@@ -3350,7 +3380,7 @@
                 const mirrorHousing = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.16, 0.14), darkMat);
                 mirrorHousing.position.set(side * 1.13, 1.65, 1.35);
                 group.add(mirrorHousing);
-                const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12, 0.10), new THREE.MeshStandardMaterial({ color: 0x99bbcc, metalness: 0.9, roughness: 0.1 }));
+                const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12, 0.10), M.mirrorGlass);
                 mirrorGlass.position.set(side * 1.19, 1.65, 1.35);
                 group.add(mirrorGlass);
             });
@@ -3402,12 +3432,12 @@
             });
 
             // License plate
-            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.16, 0.02), new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5 }));
+            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.16, 0.02), M.plate);
             plate.position.set(0, 0.78, -2.06);
             group.add(plate);
 
             // Exhaust pipe (under rear)
-            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.40, 8), new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.7, roughness: 0.5 }));
+            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.40, 8), M.exhaust);
             exhaust.rotation.x = Math.PI / 2;
             exhaust.position.set(-0.7, 0.42, -2.18);
             group.add(exhaust);
@@ -3429,7 +3459,7 @@
             } else {
                 const wheelGeom = new THREE.CylinderGeometry(0.45, 0.45, 0.3, 14);
                 const rimGeom = new THREE.CylinderGeometry(0.20, 0.20, 0.32, 10);
-                const rimMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.6, roughness: 0.4 });
+                const rimMat = M.rim;
                 [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]].forEach(pos => {
                     const wheel = new THREE.Mesh(wheelGeom, darkMat);
                     wheel.rotation.z = Math.PI / 2;
@@ -3448,10 +3478,11 @@
         function createSmallTruck(color, opts = {}) {
             const playable = opts.playable;
             const group = new THREE.Group();
-            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });
-            const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
-            const chromeMat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, metalness: 0.7, roughness: 0.4 });
-            const glassMat = new THREE.MeshStandardMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.55, metalness: 0.7, roughness: 0.2 });
+            const M = vehMats();
+            const mat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.6 });   // body — per-instance colour
+            const darkMat = M.dark;
+            const chromeMat = M.chrome;
+            const glassMat = new THREE.MeshStandardMaterial({ color: 0x87CEEB, transparent: true, opacity: 0.55, metalness: 0.7, roughness: 0.2 });   // opacity differs per vehicle
 
             // Chassis underframe (so cabin doesn't float)
             const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.18, 4.5), darkMat);
@@ -3491,7 +3522,7 @@
             }
 
             // Rectangular headlights typical of small flatbed trucks
-            const lensMat = new THREE.MeshStandardMaterial({ color: 0xffffcc, emissive: 0x222200 });
+            const lensMat = M.lens;
             [-0.78, 0.78].forEach(x => {
                 const housing = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 0.04), darkMat);
                 housing.position.set(x, 1.1, 2.32);
@@ -3518,7 +3549,7 @@
             group.add(headboard);
 
             // Tail lights
-            const tailLightMat = new THREE.MeshStandardMaterial({ color: 0xff2222, emissive: 0x331111 });
+            const tailLightMat = M.tailLight;
             [-0.8, 0.8].forEach(x => {
                 const tl = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.14, 0.05), tailLightMat);
                 tl.position.set(x, 0.85, -2.32);
@@ -3530,9 +3561,9 @@
             group.add(rb);
 
             // === ENHANCED DETAILS ===
-            const trimMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.7 });
-            const handleMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.85, roughness: 0.3 });
-            const indicatorMat = new THREE.MeshStandardMaterial({ color: 0xff9933, emissive: 0x442211, roughness: 0.4 });
+            const trimMat = M.trim;
+            const handleMat = M.handle;
+            const indicatorMat = M.indicator;
 
             // Cab roof ridge
             const cabRoof = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.10, 1.42), mat);
@@ -3568,7 +3599,7 @@
                 const mirrorHousing = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.18), darkMat);
                 mirrorHousing.position.set(side * 1.16, 1.70, 2.10);
                 group.add(mirrorHousing);
-                const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.24, 0.14), new THREE.MeshStandardMaterial({ color: 0x99bbcc, metalness: 0.9, roughness: 0.1 }));
+                const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.24, 0.14), M.mirrorGlass);
                 mirrorGlass.position.set(side * 1.23, 1.70, 2.10);
                 group.add(mirrorGlass);
             });
@@ -3615,7 +3646,7 @@
             });
 
             // License plate (rear)
-            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.18, 0.02), new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5 }));
+            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.18, 0.02), M.plate);
             plate.position.set(0, 0.75, -2.36);
             group.add(plate);
 
@@ -3655,7 +3686,7 @@
             } else {
                 const wheelGeom = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 14);
                 const rimGeom = new THREE.CylinderGeometry(0.22, 0.22, 0.36, 10);
-                const rimMat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.6, roughness: 0.4 });
+                const rimMat = M.rim;
                 [
                     [-1.0, 0.5, 1.8], [1.0, 0.5, 1.8],
                     [-1.0, 0.5, -0.5], [1.0, 0.5, -0.5],
@@ -4491,6 +4522,9 @@
                     if (node.geometry) node.geometry.dispose();
                     const mats = Array.isArray(node.material) ? node.material : (node.material ? [node.material] : []);
                     mats.forEach(m => {
+                        // Shared vehicle materials (userData.shared) are reused across many
+                        // instances — never dispose them here or other live vehicles break.
+                        if (m.userData && m.userData.shared) return;
                         for (const key in m) {
                             const val = m[key];
                             if (val && val.isTexture && !(val.userData && val.userData.shared)) val.dispose();
