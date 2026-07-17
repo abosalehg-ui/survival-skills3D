@@ -239,35 +239,6 @@
             transform: scale(0.92);
         }
 
-        /* Gas / brake pedals — bottom-centre, shown on touch devices alongside steering. */
-        #pedalButtons {
-            display: none;
-            position: fixed;
-            bottom: calc(80px + env(safe-area-inset-bottom, 0px));
-            left: 50%;
-            transform: translateX(-50%);
-            flex-direction: column;
-            gap: 10px;
-            z-index: 90;
-            pointer-events: none;
-        }
-        #pedalButtons.visible { display: flex; }
-        .pedal-btn {
-            pointer-events: auto;
-            width: clamp(54px, 13vw, 78px);
-            height: clamp(54px, 13vw, 78px);
-            border-radius: 50%;
-            border: 2px solid rgba(255,255,255,0.35);
-            background: rgba(0,0,0,0.28);
-            color: rgba(255,255,255,0.85);
-            font-size: clamp(1.2rem, 5vw, 1.8rem);
-            display: flex; align-items: center; justify-content: center;
-            user-select: none; -webkit-user-select: none; touch-action: none;
-            transition: background 0.1s ease, transform 0.1s ease;
-            font-family: inherit;
-        }
-        #gasBtn.pressed { background: rgba(90,220,120,0.5); transform: scale(0.92); }
-        #brakeBtn.pressed { background: rgba(230,90,90,0.5); transform: scale(0.92); }
 
         /* Fuel Pickup Notification */
         #fuelNotification {
@@ -839,11 +810,6 @@
         <button id="steerRightBtn" class="steer-btn" aria-label="انعطاف يمين">▶</button>
     </div>
 
-    <!-- Gas / brake pedals (touch devices) -->
-    <div id="pedalButtons">
-        <button id="gasBtn" class="pedal-btn" aria-label="تسريع">▲</button>
-        <button id="brakeBtn" class="pedal-btn" aria-label="فرملة">▼</button>
-    </div>
 
     <!-- Touch Hint -->
     <div id="touchHint">👆 اسحب يميناً ويساراً للتحكم</div>
@@ -963,9 +929,8 @@
         <div class="modal-card">
             <h2 class="modal-title">📖 كيف ألعب</h2>
             <ul class="tutorial-list">
-                <li>📱 <b>الجوال</b>: اسحب يميناً/يساراً للتوجيه، وأزرار ▲/▼ للتسريع والفرملة</li>
+                <li>📱 <b>الجوال</b>: اسحب أو استخدم الأزرار ◀▶ للتوجيه</li>
                 <li>⌨️ <b>الكيبورد</b>: ←→/A D للتوجيه، ↑↓/W S للتسريع والفرملة، Esc/P للإيقاف</li>
-                <li>🏎️ <b>غاز</b> = أسرع لكن أكثر استهلاكاً للوقود؛ <b>فرملة</b> = أبطأ وأوفر وأأمن</li>
                 <li>⛽ التقط <b>علب الوقود الخضراء</b> (+10 وقود، +5 صحة)</li>
                 <li>⚡ <b>تعزيز السرعة</b> (أصفر): سرعة 1.5× لمدة 5 ثوان</li>
                 <li>🛡️ <b>الدرع</b> (سماوي): يحميك من الاصطدام التالي</li>
@@ -1750,7 +1715,6 @@
         const hpFill = document.getElementById('hpFill');
         const hpBar = document.getElementById('hpBar');
         const steerButtonsEl = document.getElementById('steerButtons');
-        const pedalButtonsEl = document.getElementById('pedalButtons');
         const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
         // Shared red→amber→green gradient for fuel/HP bars (was duplicated per bar).
@@ -4163,30 +4127,77 @@
         }
 
         // ============= MOVING OBSTACLE: CAMEL =============
-        // A slow camel that ambles across the road. It damages like a solid obstacle, but
-        // moves gently (telegraphed) so it stays dodgeable. Built from simple boxes — no
-        // external model. Movement is applied in gameLoop for obstacles with userData.moving.
+        // A slow camel that ambles across the road. Damages like a solid obstacle but moves
+        // gently (telegraphed) so it stays dodgeable. Fully procedural (spheres/cylinders,
+        // no external model — the project ships no asset files) with organic rounded forms.
+        // Built facing +Z, then yaw-rotated to face the crossing direction.
         function createCamel(z, dir) {
             const group = new THREE.Group();
             try {
-                const tan = new THREE.MeshStandardMaterial({ color: 0xC2A26A, roughness: 0.9 });
-                const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.0, 2.2), tan);
-                body.position.y = 1.6; body.castShadow = true; group.add(body);
-                // Two humps.
-                [-0.35, 0.35].forEach(dz => {
-                    const hump = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), tan);
-                    hump.position.set(0, 2.15, dz); hump.scale.set(1, 0.8, 1); group.add(hump);
+                const coat = new THREE.MeshStandardMaterial({ color: 0xC79A5B, roughness: 0.95 });
+                const coatDark = new THREE.MeshStandardMaterial({ color: 0xA6803F, roughness: 0.95 });
+                const hoof = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 1 });
+
+                // Barrel body — an elongated sphere gives a soft rounded torso (not a box).
+                const body = new THREE.Mesh(new THREE.SphereGeometry(0.62, 14, 12), coat);
+                body.scale.set(0.82, 0.9, 1.5);
+                body.position.set(0, 1.95, 0);
+                body.castShadow = true;
+                group.add(body);
+
+                // Two rounded humps.
+                [-0.28, 0.34].forEach((dz, i) => {
+                    const hump = new THREE.Mesh(new THREE.SphereGeometry(i ? 0.34 : 0.4, 12, 10), coatDark);
+                    hump.scale.set(0.9, 0.95, 0.9);
+                    hump.position.set(0, 2.5, dz);
+                    hump.castShadow = true;
+                    group.add(hump);
                 });
-                // Neck + head.
-                const neck = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.1, 0.4), tan);
-                neck.position.set(0, 2.15, 1.15); neck.rotation.x = -0.5; group.add(neck);
-                const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.7), tan);
-                head.position.set(0, 2.75, 1.5); group.add(head);
-                // Legs.
-                [[-0.3, 0.8], [0.3, 0.8], [-0.3, -0.8], [0.3, -0.8]].forEach(([lx, lz]) => {
-                    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.2, 0.22), tan);
-                    leg.position.set(lx, 0.9, lz); group.add(leg);
+
+                // Curved neck: two tapered segments leaning up and forward.
+                const neckLow = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.24, 0.85, 10), coat);
+                neckLow.position.set(0, 2.5, 0.95);
+                neckLow.rotation.x = -0.7;
+                group.add(neckLow);
+                const neckUp = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.18, 0.75, 10), coat);
+                neckUp.position.set(0, 3.05, 1.35);
+                neckUp.rotation.x = -0.28;
+                group.add(neckUp);
+
+                // Head with a snout + ears.
+                const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 10), coat);
+                head.scale.set(0.9, 0.85, 1.25);
+                head.position.set(0, 3.42, 1.62);
+                group.add(head);
+                const snout = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.34, 8), coatDark);
+                snout.rotation.x = Math.PI / 2;
+                snout.position.set(0, 3.36, 1.86);
+                group.add(snout);
+                [-0.12, 0.12].forEach(ex => {
+                    const ear = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.16, 6), coatDark);
+                    ear.position.set(ex, 3.6, 1.5);
+                    group.add(ear);
                 });
+
+                // Four legs — thigh + shin taper, ending in a dark hoof.
+                [[-0.34, 0.72], [0.34, 0.72], [-0.34, -0.62], [0.34, -0.62]].forEach(([lx, lz]) => {
+                    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.11, 1.0, 8), coat);
+                    thigh.position.set(lx, 1.35, lz);
+                    group.add(thigh);
+                    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.07, 0.95, 8), coat);
+                    shin.position.set(lx, 0.5, lz);
+                    group.add(shin);
+                    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.14, 8), hoof);
+                    foot.position.set(lx, 0.07, lz);
+                    group.add(foot);
+                });
+
+                // Tail.
+                const tail = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.02, 0.7, 6), coat);
+                tail.position.set(0, 1.85, -0.9);
+                tail.rotation.x = 0.5;
+                group.add(tail);
+
                 group.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;   // face the crossing direction
             } catch (e) { /* fall back to an empty group; still harmless */ }
             const startX = dir > 0 ? -8 : 8;
@@ -5261,9 +5272,6 @@
                 if (throttleKeys.gas === throttleKeys.brake) state.throttle = 1.0;
                 else state.throttle = throttleKeys.gas ? 1.15 : 0.6;
             };
-            // Exposed so the touch pedal buttons drive the same target.
-            window.__setThrottle = (t) => { state.throttle = t; };
-
             document.addEventListener('keydown', (e) => {
                 // Pause toggle (works during play)
                 if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && state.isPlaying && !state.cameraRotating) {
@@ -5317,29 +5325,6 @@
                 bindSteer(document.getElementById('steerRightBtn'), -1);
             }
 
-            // On-screen gas / brake pedals (touch devices). Hold to set the throttle
-            // target; release returns to cruise (1.0). Same channel as the keyboard.
-            if (pedalButtonsEl && isTouchDevice) {
-                const bindPedal = (btn, value) => {
-                    if (!btn) return;
-                    const press = (e) => {
-                        e.preventDefault();
-                        if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
-                        state.throttle = value;
-                        btn.classList.add('pressed');
-                    };
-                    const release = (e) => {
-                        if (e) e.preventDefault();
-                        state.throttle = 1.0;
-                        btn.classList.remove('pressed');
-                    };
-                    btn.addEventListener('touchstart', press, { passive: false });
-                    btn.addEventListener('touchend', release, { passive: false });
-                    btn.addEventListener('touchcancel', release, { passive: false });
-                };
-                bindPedal(document.getElementById('gasBtn'), 1.15);
-                bindPedal(document.getElementById('brakeBtn'), 0.6);
-            }
         }
         
         // ============= IMPACT DEBRIS (pooled, cosmetic) =============
@@ -6176,7 +6161,6 @@
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
             if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
-            if (pedalButtonsEl) pedalButtonsEl.classList.remove('visible');
 
             // Save best times + unlock achievements
             const lvl = state.currentLevel;
@@ -6234,7 +6218,6 @@
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
             if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
-            if (pedalButtonsEl) pedalButtonsEl.classList.remove('visible');
 
             // Save endless best
             if (state.mode === 'endless') {
@@ -6287,7 +6270,6 @@
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
             if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
-            if (pedalButtonsEl && isTouchDevice) pedalButtonsEl.classList.add('visible');
             audio.startEngine();
         }
 
@@ -6301,7 +6283,6 @@
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
             if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
-            if (pedalButtonsEl && isTouchDevice) pedalButtonsEl.classList.add('visible');
             touchHint.style.display = 'block';
 
             audio.init();
@@ -6346,7 +6327,6 @@
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
             if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
-            if (pedalButtonsEl && isTouchDevice) pedalButtonsEl.classList.add('visible');
             audio.startEngine();
         }
 
@@ -6365,7 +6345,6 @@
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
             if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
-            if (pedalButtonsEl) pedalButtonsEl.classList.remove('visible');
             startScreen.style.display = 'flex';
             state.isPlaying = false;
             state.isPaused = false;
