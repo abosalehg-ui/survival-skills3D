@@ -2035,6 +2035,11 @@
                 // as a real mountain range.
                 const mountainCount = 18;
                 const v = new THREE.Vector3();
+                // One shared material for the whole ridge (all mountains use the same tint
+                // and opacity) — was a separate material per peak. Disposed with the group.
+                const mountainMat = new THREE.MeshBasicMaterial({
+                    color: level.mountainColor, transparent: true, opacity: 0.6, fog: true
+                });
                 for (let i = 0; i < mountainCount; i++) {
                     const width = 90 + Math.random() * 150;
                     const height = 34 + Math.random() * 60;
@@ -2060,13 +2065,7 @@
                     }
                     pos.needsUpdate = true;
                     geom.computeVertexNormals();
-                    const mat = new THREE.MeshBasicMaterial({
-                        color: level.mountainColor,
-                        transparent: true,
-                        opacity: 0.6,
-                        fog: true
-                    });
-                    const mountain = new THREE.Mesh(geom, mat);
+                    const mountain = new THREE.Mesh(geom, mountainMat);
                     const angle = (i / mountainCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
                     const distance = 370 + Math.random() * 150;
                     mountain.position.set(
@@ -2080,12 +2079,12 @@
                 }
             } catch (e) {
                 // Fallback to the simple cone range if anything above fails.
+                const mountainMat = new THREE.MeshBasicMaterial({ color: level.mountainColor, transparent: true, opacity: 0.6, fog: true });
                 for (let i = 0; i < 15; i++) {
                     const width = 80 + Math.random() * 120;
                     const height = 30 + Math.random() * 50;
                     const geom = new THREE.ConeGeometry(width / 2, height, 5);
-                    const mat = new THREE.MeshBasicMaterial({ color: level.mountainColor, transparent: true, opacity: 0.6, fog: true });
-                    const mountain = new THREE.Mesh(geom, mat);
+                    const mountain = new THREE.Mesh(geom, mountainMat);
                     const angle = (i / 15) * Math.PI * 2;
                     const distance = 400 + Math.random() * 100;
                     mountain.position.set(Math.sin(angle) * distance, height / 2 - 10, Math.cos(angle) * distance);
@@ -2138,59 +2137,100 @@
             }
         }
 
-        function createClouds() {
-            const level = CONFIG.levels[state.currentLevel];
-            const group = new THREE.Group();
-
-            // Every puff in a level shares the same colour/opacity, so build ONE material
-            // and reuse it across all ~140 puffs (was a distinct material per puff). The
-            // whole cloud group is disposed together on level change, so sharing is safe.
-            const cloudMat = new THREE.MeshBasicMaterial({
+        function cloudMaterial(level) {
+            // One material per level, shared by every puff (identical colour/opacity).
+            return new THREE.MeshBasicMaterial({
                 color: level.cloudColor,
                 transparent: true,
                 opacity: level.timeOfDay === 'night' ? 0.3 : 0.7,
                 fog: false
             });
+        }
 
-            const cloudCount = 20;
-            for (let i = 0; i < cloudCount; i++) {
+        // Fallback: the original per-mesh cloud builder (one Mesh per puff). Used only if
+        // InstancedMesh construction throws — keeps the game running per the repo rule.
+        function createCloudsMeshFallback(level) {
+            const group = new THREE.Group();
+            const cloudMat = cloudMaterial(level);
+            for (let i = 0; i < 20; i++) {
                 const cloudGroup = new THREE.Group();
-
-                // Create fluffy cloud from multiple spheres
                 const puffCount = 5 + Math.floor(Math.random() * 5);
                 for (let j = 0; j < puffCount; j++) {
                     const size = 15 + Math.random() * 25;
-                    const geom = new THREE.SphereGeometry(size, 8, 8);
-                    const puff = new THREE.Mesh(geom, cloudMat);
-                    puff.position.set(
-                        (Math.random() - 0.5) * size * 2,
-                        (Math.random() - 0.5) * size * 0.5,
-                        (Math.random() - 0.5) * size * 2
-                    );
+                    const puff = new THREE.Mesh(new THREE.SphereGeometry(size, 8, 8), cloudMat);
+                    puff.position.set((Math.random() - 0.5) * size * 2, (Math.random() - 0.5) * size * 0.5, (Math.random() - 0.5) * size * 2);
                     puff.scale.y = 0.4 + Math.random() * 0.3;
                     cloudGroup.add(puff);
                 }
-                
-                // Position cloud in sky
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 200 + Math.random() * 300;
-                const height = 80 + Math.random() * 60;
-                cloudGroup.position.set(
-                    Math.sin(angle) * distance,
-                    height,
-                    Math.cos(angle) * distance
-                );
-                
-                cloudGroup.userData = {
-                    speed: 0.5 + Math.random() * 1,
-                    originalX: cloudGroup.position.x,
-                    originalZ: cloudGroup.position.z
-                };
-                
+                cloudGroup.position.set(Math.sin(angle) * distance, 80 + Math.random() * 60, Math.cos(angle) * distance);
+                cloudGroup.userData = { speed: 0.5 + Math.random() * 1 };
                 group.add(cloudGroup);
             }
-            
             return group;
+        }
+
+        // Instanced clouds: ~140 puff spheres collapse into ONE draw call. A unit sphere is
+        // scaled per instance (size on x/z, size*flatten on y) and translated to the same
+        // positions the per-mesh version used, so the result is visually identical. Drift +
+        // z-follow are driven by rewriting the instance matrices each frame (updateClouds).
+        function createClouds() {
+            const level = CONFIG.levels[state.currentLevel];
+            try {
+                const clouds = [];   // per-cloud drift state: { cx, cz, speed }
+                const puffs = [];    // per-instance: { cloudIdx, lx, ly, lz, size, sy }
+                for (let i = 0; i < 20; i++) {
+                    const angle = Math.random() * Math.PI * 2;
+                    const distance = 200 + Math.random() * 300;
+                    const cloudIdx = clouds.length;
+                    clouds.push({
+                        cx: Math.sin(angle) * distance,
+                        cz: Math.cos(angle) * distance,
+                        gy: 80 + Math.random() * 60,
+                        speed: 0.5 + Math.random() * 1
+                    });
+                    const puffCount = 5 + Math.floor(Math.random() * 5);
+                    for (let j = 0; j < puffCount; j++) {
+                        const size = 15 + Math.random() * 25;
+                        puffs.push({
+                            cloudIdx,
+                            lx: (Math.random() - 0.5) * size * 2,
+                            ly: (Math.random() - 0.5) * size * 0.5,
+                            lz: (Math.random() - 0.5) * size * 2,
+                            size,
+                            sy: 0.4 + Math.random() * 0.3
+                        });
+                    }
+                }
+                const group = new THREE.Group();
+                const inst = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 8), cloudMaterial(level), puffs.length);
+                inst.frustumCulled = false;   // spans the whole sky and drifts every frame
+                inst.userData.cloudData = { clouds, puffs };
+                group.add(inst);
+                group.userData.cloudInst = inst;
+                writeCloudMatrices(inst);
+                return group;
+            } catch (e) {
+                return createCloudsMeshFallback(level);
+            }
+        }
+
+        // Reusable scratch objects so the per-frame matrix rewrite allocates nothing.
+        const _cloudM = new THREE.Matrix4();
+        const _cloudPos = new THREE.Vector3();
+        const _cloudScl = new THREE.Vector3();
+        const _cloudQuat = new THREE.Quaternion();
+        function writeCloudMatrices(inst) {
+            const { clouds, puffs } = inst.userData.cloudData;
+            for (let k = 0; k < puffs.length; k++) {
+                const p = puffs[k], c = clouds[p.cloudIdx];
+                _cloudPos.set(c.cx + p.lx, c.gy + p.ly, c.cz + p.lz);
+                _cloudScl.set(p.size, p.size * p.sy, p.size);
+                _cloudM.compose(_cloudPos, _cloudQuat, _cloudScl);
+                inst.setMatrixAt(k, _cloudM);
+            }
+            inst.instanceMatrix.needsUpdate = true;
         }
         
         // ============= TOYOTA LAND CRUISER 70 PICKUP =============
@@ -4522,6 +4562,9 @@
             try {
                 obj.traverse(node => {
                     if (node.geometry) node.geometry.dispose();
+                    // InstancedMesh holds a per-instance matrix buffer separate from its
+                    // geometry — free it too (e.g. the instanced clouds on level change).
+                    if (node.isInstancedMesh && node.dispose) node.dispose();
                     const mats = Array.isArray(node.material) ? node.material : (node.material ? [node.material] : []);
                     mats.forEach(m => {
                         // Shared vehicle materials (userData.shared) are reused across many
@@ -5285,14 +5328,23 @@
         // ============= UPDATE CLOUDS =============
         function updateClouds(delta) {
             clouds.forEach(cloudGroup => {
+                const inst = cloudGroup.userData && cloudGroup.userData.cloudInst;
+                if (inst) {
+                    // Instanced path: drift each cloud in x (same slow speed + ±500 wrap as
+                    // before) then rewrite the instance matrices.
+                    const cl = inst.userData.cloudData.clouds;
+                    for (let i = 0; i < cl.length; i++) {
+                        cl[i].cx += cl[i].speed * delta;
+                        if (cl[i].cx > 500) cl[i].cx = -500;
+                    }
+                    writeCloudMatrices(inst);
+                    return;
+                }
+                // Fallback per-mesh path.
                 cloudGroup.children.forEach(cloud => {
                     if (cloud.userData && cloud.userData.speed) {
                         cloud.position.x += cloud.userData.speed * delta;
-                        
-                        // Wrap around
-                        if (cloud.position.x > 500) {
-                            cloud.position.x = -500;
-                        }
+                        if (cloud.position.x > 500) cloud.position.x = -500;
                     }
                 });
             });
