@@ -4147,7 +4147,48 @@
             
             return mesh;
         }
-        
+
+        // ============= MOVING OBSTACLE: CAMEL =============
+        // A slow camel that ambles across the road. It damages like a solid obstacle, but
+        // moves gently (telegraphed) so it stays dodgeable. Built from simple boxes — no
+        // external model. Movement is applied in gameLoop for obstacles with userData.moving.
+        function createCamel(z, dir) {
+            const group = new THREE.Group();
+            try {
+                const tan = new THREE.MeshStandardMaterial({ color: 0xC2A26A, roughness: 0.9 });
+                const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.0, 2.2), tan);
+                body.position.y = 1.6; body.castShadow = true; group.add(body);
+                // Two humps.
+                [-0.35, 0.35].forEach(dz => {
+                    const hump = new THREE.Mesh(new THREE.SphereGeometry(0.42, 10, 8), tan);
+                    hump.position.set(0, 2.15, dz); hump.scale.set(1, 0.8, 1); group.add(hump);
+                });
+                // Neck + head.
+                const neck = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.1, 0.4), tan);
+                neck.position.set(0, 2.15, 1.15); neck.rotation.x = -0.5; group.add(neck);
+                const head = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.7), tan);
+                head.position.set(0, 2.75, 1.5); group.add(head);
+                // Legs.
+                [[-0.3, 0.8], [0.3, 0.8], [-0.3, -0.8], [0.3, -0.8]].forEach(([lx, lz]) => {
+                    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.2, 0.22), tan);
+                    leg.position.set(lx, 0.9, lz); group.add(leg);
+                });
+                group.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;   // face the crossing direction
+            } catch (e) { /* fall back to an empty group; still harmless */ }
+            const startX = dir > 0 ? -8 : 8;
+            const terrainHeight = getTerrainHeight(startX, z);
+            group.position.set(startX, terrainHeight, z);
+            group.userData = {
+                type: 'rock',            // damages like a solid obstacle
+                radius: 1.3,
+                yOffset: 0,
+                moving: true,
+                vx: dir * (1.1 + Math.random() * 0.8),   // slow amble, telegraphed
+                minX: -8, maxX: 8
+            };
+            return group;
+        }
+
         // ============= FUEL CANS =============
         function createFuelCan(z) {
             const x = (rand() - 0.5) * 12;
@@ -4916,6 +4957,19 @@
                     const obstacle = createObstacle(z, x);
                     obstacles.push(obstacle);
                     scene.add(obstacle);
+                }
+            }
+
+            // Moving obstacles: camels amble across the road. Story/time-trial only (they
+            // carry per-frame movement state that the endless pool doesn't manage), sparse,
+            // and only from the 2nd level on so early levels stay gentle.
+            if (!isEndless && state.currentLevel >= 1) {
+                for (let z = 140; z < obstacleEnd; z += 170) {
+                    if (rand() < 0.5) {
+                        const camel = createCamel(z, rand() > 0.5 ? 1 : -1);
+                        obstacles.push(camel);
+                        scene.add(camel);
+                    }
                 }
             }
 
@@ -6009,6 +6063,16 @@
                 _stormColor.set(state.sandstormActive ? 0xB8956A : level.fogColor);
                 scene.fog.color.lerp(_stormColor, blend);
             }
+
+            // Moving obstacles (camels): amble across the road, bouncing at the edges, and
+            // ride the terrain. Collision uses their live positions in checkCollisions below.
+            obstacles.forEach(o => {
+                if (!o.userData.moving) return;
+                o.position.x += o.userData.vx * delta;
+                if (o.position.x < o.userData.minX) { o.position.x = o.userData.minX; o.userData.vx = Math.abs(o.userData.vx); o.rotation.y = Math.PI / 2; }
+                else if (o.position.x > o.userData.maxX) { o.position.x = o.userData.maxX; o.userData.vx = -Math.abs(o.userData.vx); o.rotation.y = -Math.PI / 2; }
+                o.position.y = getTerrainHeight(o.position.x, o.position.z);
+            });
 
             updateDustParticles(delta);
             updateDebris(delta);
