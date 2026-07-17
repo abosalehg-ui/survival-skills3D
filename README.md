@@ -155,6 +155,20 @@ survival-skills3D/
 
 هذا المشروع متاح للاستخدام الحر والتعليمي.
 
+## 🙏 شكر وتقدير
+
+نموذج الجمل (`assets/models/camel.glb`) — الاستثناء الوحيد لقاعدة «لا أصول
+خارجية» — مبنيّ على عمل:
+
+> "[Camel (Download the original glb)](https://skfb.ly/oRFt6)" by
+> [kenchoo](https://sketchfab.com/kenchoo) is licensed under
+> [Creative Commons Attribution 4.0](http://creativecommons.org/licenses/by/4.0/).
+
+النموذج المُستخدَم في اللعبة **مُعدَّل** عن الأصل: بُسِّطت الهندسة (79,165 → 7,972
+مثلث)، وحُذف الهيكل العظمي والأنيميشن (غير مُستخدَمين في نظام العقبات الحالي)،
+وصُغِّرت الخامات (1024×1024 → 512×512) — تفاصيل المعالجة في
+`assets/models/README.md`.
+
 ## 👨‍💻 المطور
 
 <div align="center">
