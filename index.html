@@ -1652,10 +1652,14 @@
             fuelDoubler: false,
             shielded: false,
 
-            // Sandstorm (sandstormUntil is game-time; used by endless mode only —
-            // story-mode storms last the whole level)
+            // Sandstorm. sandstormUntil (game-time) is used by endless mode's
+            // distance-triggered storms. sandstormToggleAt (game-time) drives the
+            // intermittent on/off cycle for story/time-trial levels with fixed
+            // weather:'sandstorm' — a storm that never lifts made the whole level
+            // permanently zero-visibility, which reads as broken rather than atmospheric.
             sandstormActive: false,
             sandstormUntil: 0,
+            sandstormToggleAt: 0,
 
             // Endless mode
             endlessSandstormNext: 0,
@@ -1695,6 +1699,14 @@
         let skyDome = null;
         let sunLight = null;         // level sun/moon — followed in gameLoop so shadows track the car
         let badgeAccum = 0;          // fixed-cadence effect-badge refresh timer
+        // Optional real camel model (GLTF), loaded from a same-origin local file so it has
+        // no CORS/CDN-uptime dependency and can be precached by the service worker for
+        // offline play. This is a deliberate, explicit exception to the project's
+        // "no external assets" rule (owner-approved) — the procedural camel remains the
+        // permanent fallback if the file is absent or fails to load, so the game is never
+        // broken by its absence.
+        let camelTemplate = null;    // loaded THREE.Object3D, cloned per spawn once ready
+        let camelLoadAttempted = false;
         // Hide-timers for transient toasts. Kept so a rapid second toast cancels the
         // first one's pending hide instead of being blanked early by it.
         let fuelNotifTimer = 0, achievementToastTimer = 0;
@@ -1843,6 +1855,9 @@
             // If the CDN modules fail (e.g. first-run offline), the game still runs
             // with a plain render path.
             setupPostProcessing();
+            // Optional real camel model — see setupCamelModel(). Purely additive; the
+            // procedural camel already works and keeps being used until/unless this resolves.
+            setupCamelModel();
         }
 
         async function setupPostProcessing() {
@@ -1870,6 +1885,58 @@
             } catch (e) {
                 postProcessingReady = false;
                 usePostProcessing = false;
+            }
+        }
+
+        // Best-effort load of a real camel model to replace the procedural one. Same-origin
+        // path (no CORS dependency, cacheable by the service worker). Never blocks or throws
+        // outward — createCamel() checks camelTemplate and silently uses the procedural
+        // builder whenever this hasn't finished (or the file doesn't exist yet).
+        async function setupCamelModel() {
+            if (camelLoadAttempted) return;
+            camelLoadAttempted = true;
+            try {
+                const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+                const loader = new GLTFLoader();
+                const gltf = await new Promise((resolve, reject) => {
+                    loader.load('assets/models/camel.glb', resolve, undefined, reject);
+                });
+                const root = gltf.scene;
+                // The scene was just parsed (never rendered or added to the scene graph),
+                // so world matrices may still be at their defaults — force them current
+                // before measuring, or the bounding box below can be wrong/empty.
+                root.updateMatrixWorld(true);
+                // Normalize scale/position: fit the model to roughly the same footprint as
+                // the procedural camel (about 3.3 world units long, standing on the ground)
+                // regardless of the source model's original units, and centre it on X/Z with
+                // its feet at y=0 so it drops onto the terrain the same way the old one did.
+                const box = new THREE.Box3().setFromObject(root);
+                const size = new THREE.Vector3();
+                box.getSize(size);
+                const longest = Math.max(size.x, size.y, size.z) || 1;
+                const scale = 3.3 / longest;
+                root.scale.setScalar(scale);
+                root.updateMatrixWorld(true);
+                const scaledBox = new THREE.Box3().setFromObject(root);
+                const center = new THREE.Vector3();
+                scaledBox.getCenter(center);
+                root.position.x -= center.x;
+                root.position.z -= center.z;
+                root.position.y -= scaledBox.min.y;
+                // Face +Z, matching createCamel()'s rotation convention below.
+                root.traverse(node => {
+                    if (node.isMesh) {
+                        node.castShadow = true;
+                        node.receiveShadow = false;
+                        // Every clone shares these — never let disposeObject3D free them.
+                        if (node.geometry) node.geometry.userData.shared = true;
+                        const mats = Array.isArray(node.material) ? node.material : [node.material];
+                        mats.forEach(m => { if (m) m.userData.shared = true; });
+                    }
+                });
+                camelTemplate = root;
+            } catch (e) {
+                camelTemplate = null;   // stay on the procedural fallback
             }
         }
 
@@ -4053,10 +4120,18 @@
             mesh.position.y = 0;
             mesh.receiveShadow = true;
 
+            // Top face sits at y = -4 - BASE_TOP_MARGIN (not y=0): the goal-flatten plateau
+            // (see goalFlatten) makes the visible surface EXACTLY y=0 over a wide, flat
+            // area near the goal, and a base box top also at y=0 was perfectly coincident
+            // with it — textbook z-fighting, seen as a flickering interlaced/torn pattern
+            // over the goal clearing. The margin keeps the base strictly behind the surface
+            // everywhere the terrain can be flat, at negligible visual cost (base is only
+            // ever seen edge-on, filling the gap under the sand).
+            const BASE_TOP_MARGIN = 0.12;
             const baseGeometry = new THREE.BoxGeometry(100, 8, TERRAIN_CHUNK_SIZE);
             const baseMaterial = new THREE.MeshStandardMaterial({ color: sandColor, roughness: 1 });
             const base = new THREE.Mesh(baseGeometry, baseMaterial);
-            base.position.set(0, -4, zPosition);
+            base.position.set(0, -4 - BASE_TOP_MARGIN, zPosition);
 
             return { surface: mesh, base: base };
         }
@@ -4131,10 +4206,13 @@
 
         // ============= MOVING OBSTACLE: CAMEL =============
         // A slow camel that ambles across the road. Damages like a solid obstacle but moves
-        // gently (telegraphed) so it stays dodgeable. Fully procedural (spheres/cylinders,
-        // no external model — the project ships no asset files) with organic rounded forms.
-        // Built facing +Z, then yaw-rotated to face the crossing direction.
-        function createCamel(z, dir) {
+        // gently (telegraphed) so it stays dodgeable. Built facing +Z, then yaw-rotated to
+        // face the crossing direction.
+        //
+        // Two visual sources: a real GLTF model (see setupCamelModel) when it has finished
+        // loading, else this procedural builder (spheres/cylinders) as an always-available
+        // fallback — so a missing/slow/failed model file never breaks the level.
+        function buildProceduralCamel() {
             const group = new THREE.Group();
             try {
                 const coat = new THREE.MeshStandardMaterial({ color: 0xC79A5B, roughness: 0.95 });
@@ -4200,9 +4278,18 @@
                 tail.position.set(0, 1.85, -0.9);
                 tail.rotation.x = 0.5;
                 group.add(tail);
-
-                group.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;   // face the crossing direction
             } catch (e) { /* fall back to an empty group; still harmless */ }
+            return group;
+        }
+
+        function createCamel(z, dir) {
+            // Prefer the real model once it's loaded; clone() shares the (userData.shared)
+            // geometry/materials across every camel instance, so this is cheap.
+            const visual = camelTemplate ? camelTemplate.clone() : buildProceduralCamel();
+            const group = new THREE.Group();
+            group.add(visual);
+            group.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;   // face the crossing direction
+
             const startX = dir > 0 ? -8 : 8;
             const terrainHeight = getTerrainHeight(startX, z);
             group.position.set(startX, terrainHeight, z);
@@ -4443,6 +4530,14 @@
             effectBadges.innerHTML = badges.map(b => `<div class="effect-badge ${b.cls}">${b.text}</div>`).join('');
             shieldVisual.style.display = state.shielded ? 'block' : 'none';
             sandstormOverlay.style.display = state.sandstormActive ? 'block' : 'none';
+            // Mirage shimmer reads as a heat effect and clashes with the sandstorm overlay,
+            // so hide it only WHILE a storm is actually active (sandstorm is now
+            // intermittent — hiding it for the whole level would lose the effect during
+            // the calm windows). Night has no mirage either.
+            const lvl = CONFIG.levels[state.currentLevel];
+            if (lvl) {
+                mirageOverlay.style.display = (lvl.timeOfDay === 'night' || state.sandstormActive) ? 'none' : 'block';
+            }
         }
 
         // ============= DECORATIONS =============
@@ -4808,13 +4903,16 @@
             return particles;
         }
         
-        // Free GPU memory held by an object tree. Shared TextureFactory maps are flagged
-        // userData.shared so we never dispose a cached texture other objects still use.
+        // Free GPU memory held by an object tree. Shared TextureFactory maps/geometries are
+        // flagged userData.shared so we never dispose a cached resource other objects still
+        // use (e.g. every cloned camel instance shares the loaded model's geometry).
         function disposeObject3D(obj) {
             if (!obj) return;
             try {
                 obj.traverse(node => {
-                    if (node.geometry) node.geometry.dispose();
+                    if (node.geometry && !(node.geometry.userData && node.geometry.userData.shared)) {
+                        node.geometry.dispose();
+                    }
                     // InstancedMesh holds a per-instance matrix buffer separate from its
                     // geometry — free it too (e.g. the instanced clouds on level change).
                     if (node.isInstancedMesh && node.dispose) node.dispose();
@@ -5102,7 +5200,8 @@
             vehicle.add(dustParticles);
             dustParticles.position.set(0, 0.3, -2.5);
 
-            mirageOverlay.style.display = (level.timeOfDay === 'night' || level.weather === 'sandstorm') ? 'none' : 'block';
+            // (mirageOverlay visibility is set dynamically in updateEffectBadges, since
+            // sandstorm is now intermittent rather than a fixed per-level flag.)
 
             // Reset cargo (only if vehicle has it - some vehicles don't)
             if (vehicle.cargo && vehicle.cargo.length) {
@@ -5149,9 +5248,13 @@
             state.fuelDoubler = false;
             state.shielded = false;
 
-            // Sandstorm setup
-            state.sandstormActive = level.weather === 'sandstorm';
+            // Sandstorm setup. Fixed-weather levels (story/time-trial) start CALM with the
+            // first burst scheduled a few seconds in, then cycle storm/calm for the rest of
+            // the level (see the toggle in gameLoop) instead of one storm lasting the whole
+            // route with zero visibility throughout.
+            state.sandstormActive = false;
             state.sandstormUntil = 0;
+            state.sandstormToggleAt = (level.weather === 'sandstorm') ? (6 + Math.random() * 4) : 0;
             if (state.mode === 'endless') {
                 state.endlessSandstormNext = 1200 + Math.random() * 800;
                 state.endlessLastObstacleX = 0;
@@ -5841,6 +5944,16 @@
                     gameOver(false, 'timeout');
                     return;
                 }
+            }
+            // Intermittent sandstorm for fixed-weather story/time-trial levels: alternate
+            // storm/calm windows on the game clock (frozen while paused) instead of one
+            // storm lasting the entire route. Endless mode has its own distance-triggered
+            // version below.
+            if (state.mode !== 'endless' && level.weather === 'sandstorm' && state.timeElapsed >= state.sandstormToggleAt) {
+                state.sandstormActive = !state.sandstormActive;
+                const dur = state.sandstormActive ? (9 + Math.random() * 5) : (8 + Math.random() * 6);
+                state.sandstormToggleAt = state.timeElapsed + dur;
+                updateEffectBadges();
             }
             if (state.mode === 'endless') {
                 // Periodic sandstorms. Expiry runs on game time (not setTimeout),
