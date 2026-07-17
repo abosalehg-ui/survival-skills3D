@@ -1556,6 +1556,10 @@
             endlessSandstormNext: 0,
             endlessLastObstacleX: 0,   // reachability anchor for runtime obstacle spawns
 
+            // World Z around which the terrain is flattened so the goal sits on flat
+            // ground. null = no goal (endless mode). Set per-level in setupLevel.
+            goalFlattenZ: null,
+
             // Pre-game UI flow
             pendingMode: 'story',
             pendingLevel: 0,
@@ -3652,6 +3656,27 @@
         }
 
         // ============= TERRAIN GENERATION =============
+        // NOTE: getTerrainHeight is the single source of truth for BOTH the visible sand
+        // mesh and the car's physics; getTerrainSlope is its EXACT analytic gradient and
+        // the two must never drift (tests/logic.test.mjs guards this). The block between
+        // the @terrain-testable markers is what that test extracts and evaluates.
+        // @terrain-testable-start
+        // Goal-flatten: near the goal the terrain eases to y≈0 so the goal platform/camp
+        // (built assuming flat ground at y=0) sits ON the surface instead of being buried
+        // or floating up to ±1.85*duneHeight. `state.goalFlattenZ` is the goal's world Z
+        // (set in setupLevel), or null in endless mode / any level without a goal.
+        // Returns { g, gz }: g multiplies the height, gz = dg/dz for the analytic slope.
+        const GOAL_FLATTEN_SIGMA = 22;   // ~±40u transition, so the car eases onto the pad
+        function goalFlatten(z) {
+            const Z = state.goalFlattenZ;
+            if (Z == null) return { g: 1, gz: 0 };
+            const d = z - Z;
+            const sig2 = GOAL_FLATTEN_SIGMA * GOAL_FLATTEN_SIGMA;
+            const flat = Math.exp(-(d * d) / (2 * sig2));   // 1 at the goal → 0 far away
+            // g = 1 - flat; d/dz(1 - flat) = flat * d / sig2
+            return { g: 1 - flat, gz: flat * d / sig2 };
+        }
+
         function getTerrainHeight(x, z) {
             const level = CONFIG.levels[state.currentLevel];
             const dune = level.duneHeight;
@@ -3675,7 +3700,7 @@
             hills += Math.sin(z * 0.11 + 1.3) * dune * 0.85;   // main rolling hills (~57u)
             hills += Math.sin(z * 0.21 + 0.6) * dune * 0.4;    // shorter undulations (~30u)
 
-            return lateral + hills;
+            return (lateral + hills) * goalFlatten(z).g;
         }
 
         // Analytic ∂h/∂x, ∂h/∂z of getTerrainHeight — the two functions MUST stay
@@ -3700,14 +3725,26 @@
             const roadFactor = Math.exp(-(x * x) / w2);
             const damp = 1 - roadFactor * 0.7;
 
+            // Height (before goal-flatten) and its raw partials — the same base the
+            // getTerrainHeight() above returns pre-flatten.
+            const hills = Math.cos(z * 0.05 - 0.4) * dune * 0.6
+                        + Math.sin(z * 0.11 + 1.3) * dune * 0.85
+                        + Math.sin(z * 0.21 + 0.6) * dune * 0.4;
+            const base = lateral * damp + hills;
             // d/dx [lateral * damp] = lx*damp + lateral * 0.7 * roadFactor * 2x/w2
-            _slope.dx = lx * damp + lateral * 1.4 * roadFactor * x / w2;
-            _slope.dz = lz * damp
+            const dxBase = lx * damp + lateral * 1.4 * roadFactor * x / w2;
+            const dzBase = lz * damp
                 - Math.sin(z * 0.05 - 0.4) * 0.05 * dune * 0.6
                 + Math.cos(z * 0.11 + 1.3) * 0.11 * dune * 0.85
                 + Math.cos(z * 0.21 + 0.6) * 0.21 * dune * 0.4;
+
+            // Product rule for H = base * g(z): ∂x = dxBase*g, ∂z = dzBase*g + base*g'.
+            const { g, gz } = goalFlatten(z);
+            _slope.dx = dxBase * g;
+            _slope.dz = dzBase * g + base * gz;
             return _slope;
         }
+        // @terrain-testable-end
 
         // Fill a terrain chunk's normal attribute from the analytic slope. The
         // plane is rotated -PI/2 about X, so plane-local (x, y) maps to world
@@ -4472,7 +4509,12 @@
             state.trackIndex = 0;
 
             const level = CONFIG.levels[state.currentLevel];
-            
+
+            // Flatten the terrain under the goal (must be set BEFORE terrain chunks are
+            // built below so their heights/normals already account for it). Endless mode
+            // has no goal marker, so no flattening. Matches goalZ used when placing the goal.
+            state.goalFlattenZ = (state.mode === 'endless') ? null : (level.distance + 25);
+
             scene.fog = new THREE.Fog(level.fogColor, level.fogNear, level.fogFar);
 
             // Gradient sky dome + image-based lighting (sets scene.background/environment)

@@ -34,15 +34,17 @@ function slice(startAnchor, endAnchor) {
     return html.slice(start, end);
 }
 
-// getTerrainHeight + _slope + getTerrainSlope live together, before applyTerrainNormals.
-const terrainSrc = slice('function getTerrainHeight', 'function applyTerrainNormals');
+// goalFlatten + getTerrainHeight + getTerrainSlope live inside the @terrain-testable
+// markers (kept together precisely so this test can extract them verbatim).
+const terrainSrc = slice('// @terrain-testable-start', '// @terrain-testable-end');
 // barColor sits just before the `const levelName = ...` DOM lookups.
 const barColorSrc = slice('function barColor', 'const levelName');
 
 // Build the terrain functions with a mock CONFIG/state (the only globals they read).
-function buildTerrain(level) {
+// goalFlattenZ mirrors state.goalFlattenZ: null = no goal flattening (endless / default).
+function buildTerrain(level, goalFlattenZ = null) {
     const CONFIG = { levels: [level] };
-    const state = { currentLevel: 0 };
+    const state = { currentLevel: 0, goalFlattenZ };
     const factory = new Function('CONFIG', 'state',
         terrainSrc + '\n return { getTerrainHeight, getTerrainSlope };');
     return factory(CONFIG, state);
@@ -83,6 +85,52 @@ test('getTerrainSlope matches the numeric gradient of getTerrainHeight', () => {
         }
     }
     assert.ok(checked > 500, `expected a dense sample grid, only checked ${checked}`);
+});
+
+// --- The goal-flatten factor keeps analytic slope == numeric derivative -------
+// getTerrainHeight is multiplied by a Gaussian goal-flatten factor and getTerrainSlope
+// applies the product rule for it. This checks the two still agree THROUGH the flatten
+// region (the derivative of the product is where a hand-written gradient usually drifts).
+test('getTerrainSlope matches numeric gradient with goal-flatten active', () => {
+    const GOAL_Z = 120;
+    const eps = 1e-4;
+    const tol = 1e-3;
+    let checked = 0;
+    for (const level of [{ duneHeight: 1.2 }, { duneHeight: 2.5, narrowPath: true }, { duneHeight: 0.7 }]) {
+        const { getTerrainHeight, getTerrainSlope } = buildTerrain(level, GOAL_Z);
+        // Sample densely straddling the goal, where the flatten factor varies fastest.
+        for (let x = -12; x <= 12; x += 2.3) {
+            for (let z = GOAL_Z - 60; z <= GOAL_Z + 60; z += 3.1) {
+                const s = getTerrainSlope(x, z);
+                const sdx = s.dx, sdz = s.dz;
+                const numDx = (getTerrainHeight(x + eps, z) - getTerrainHeight(x - eps, z)) / (2 * eps);
+                const numDz = (getTerrainHeight(x, z + eps) - getTerrainHeight(x, z - eps)) / (2 * eps);
+                assert.ok(Math.abs(sdx - numDx) < tol,
+                    `dx mismatch @ dune=${level.duneHeight} (${x.toFixed(1)},${z.toFixed(1)}): ${sdx.toFixed(5)} vs ${numDx.toFixed(5)}`);
+                assert.ok(Math.abs(sdz - numDz) < tol,
+                    `dz mismatch @ dune=${level.duneHeight} (${x.toFixed(1)},${z.toFixed(1)}): ${sdz.toFixed(5)} vs ${numDz.toFixed(5)}`);
+                checked++;
+            }
+        }
+    }
+    assert.ok(checked > 500, `expected a dense sample grid, only checked ${checked}`);
+});
+
+test('goal-flatten pulls the ground to ~0 at the goal and leaves it untouched far away', () => {
+    const GOAL_Z = 800;
+    const level = { duneHeight: 2.5 };  // steepest level — worst-case burial
+    const flat = buildTerrain(level, GOAL_Z);
+    const plain = buildTerrain(level, null);
+    // At the goal centre the surface must be near flat (was up to ±1.85*dune ≈ ±4.6u).
+    for (let x = -9; x <= 9; x += 3) {
+        assert.ok(Math.abs(flat.getTerrainHeight(x, GOAL_Z)) < 0.05,
+            `goal centre not flat at x=${x}: ${flat.getTerrainHeight(x, GOAL_Z).toFixed(3)}`);
+    }
+    // Far from the goal the height is unchanged vs the un-flattened field.
+    for (let z = 0; z <= 200; z += 25) {
+        assert.ok(Math.abs(flat.getTerrainHeight(3, z) - plain.getTerrainHeight(3, z)) < 1e-9,
+            `far-field height drifted at z=${z}`);
+    }
 });
 
 // --- The road is flattened laterally so the player is never walled in ---------
