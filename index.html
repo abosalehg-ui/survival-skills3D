@@ -3182,6 +3182,45 @@
             return _vehMats;
         }
 
+        // ============= VEHICLE PARTS LIBRARY =============
+        // First increment of the M2 "shared parts" refactor. These builders centralise the
+        // repetitive mesh-construction PATTERN (create → position → rotate → shadow → add)
+        // that every vehicle builder open-codes dozens of times. They take explicit sizes
+        // and positions, so replacing inline code with a call produces byte-identical output
+        // — pure de-duplication, no appearance change. More part types migrate here over
+        // time (the review's "opportunistic" approach), starting with the ones whose
+        // construction is identical across vehicles (e.g. the parked-vehicle wheel sets).
+        const VP = {
+            // Create a mesh, position (and optionally rotate / shadow), add to parent, return it.
+            add(parent, geom, mat, x, y, z, opts) {
+                const m = new THREE.Mesh(geom, mat);
+                m.position.set(x, y, z);
+                if (opts) {
+                    if (opts.rx) m.rotation.x = opts.rx;
+                    if (opts.ry) m.rotation.y = opts.ry;
+                    if (opts.rz) m.rotation.z = opts.rz;
+                    if (opts.shadow) m.castShadow = true;
+                }
+                parent.add(m);
+                return m;
+            },
+            // Box part (the most common shape).
+            box(parent, w, h, d, mat, x, y, z, opts) {
+                return VP.add(parent, new THREE.BoxGeometry(w, h, d), mat, x, y, z, opts);
+            },
+            // A static wheel set for parked (non-playable) vehicles: chunky tyre + rim at
+            // each position. Identical across the jeep/pickup/small-truck decoration bodies
+            // (only the radii/width and positions differ) — this replaces three copies.
+            decoWheels(parent, positions, tyreR, tyreW, rimR, rimW, tyreMat, rimMat) {
+                const tyreGeom = new THREE.CylinderGeometry(tyreR, tyreR, tyreW, 14);
+                const rimGeom = new THREE.CylinderGeometry(rimR, rimR, rimW, 10);
+                positions.forEach(pos => {
+                    VP.add(parent, tyreGeom, tyreMat, pos[0], pos[1], pos[2], { rz: Math.PI / 2 });
+                    VP.add(parent, rimGeom, rimMat, pos[0], pos[1], pos[2], { rz: Math.PI / 2 });
+                });
+            },
+        };
+
         // ============= PARKED + PLAYABLE VEHICLES =============
         // Add playable contract (wheels/headlights/cargo/frontLight) to any model
         function addPlayableExtras(group, wheelPositions, frontZ) {
@@ -3385,19 +3424,7 @@
             if (playable) {
                 addPlayableExtras(group, [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]], 1.82);
             } else {
-                const wheelGeom = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 14);
-                const rimGeom = new THREE.CylinderGeometry(0.18, 0.18, 0.32, 10);
-                const rimMat = M.rim;
-                [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]].forEach(pos => {
-                    const wheel = new THREE.Mesh(wheelGeom, darkMat);
-                    wheel.rotation.z = Math.PI / 2;
-                    wheel.position.set(...pos);
-                    group.add(wheel);
-                    const rim = new THREE.Mesh(rimGeom, rimMat);
-                    rim.rotation.z = Math.PI / 2;
-                    rim.position.set(...pos);
-                    group.add(rim);
-                });
+                VP.decoWheels(group, [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]], 0.4, 0.3, 0.18, 0.32, darkMat, M.rim);
             }
 
             return group;
@@ -3605,19 +3632,7 @@
             if (playable) {
                 addPlayableExtras(group, [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]], 2.82);
             } else {
-                const wheelGeom = new THREE.CylinderGeometry(0.45, 0.45, 0.3, 14);
-                const rimGeom = new THREE.CylinderGeometry(0.20, 0.20, 0.32, 10);
-                const rimMat = M.rim;
-                [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]].forEach(pos => {
-                    const wheel = new THREE.Mesh(wheelGeom, darkMat);
-                    wheel.rotation.z = Math.PI / 2;
-                    wheel.position.set(...pos);
-                    group.add(wheel);
-                    const rim = new THREE.Mesh(rimGeom, rimMat);
-                    rim.rotation.z = Math.PI / 2;
-                    rim.position.set(...pos);
-                    group.add(rim);
-                });
+                VP.decoWheels(group, [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]], 0.45, 0.3, 0.20, 0.32, darkMat, M.rim);
             }
 
             return group;
@@ -3832,23 +3847,11 @@
             if (playable) {
                 addPlayableExtras(group, [[-1.0, 0.5, 1.8], [1.0, 0.5, 1.8], [-1.0, 0.5, -1.8], [1.0, 0.5, -1.8]], 2.34);
             } else {
-                const wheelGeom = new THREE.CylinderGeometry(0.5, 0.5, 0.35, 14);
-                const rimGeom = new THREE.CylinderGeometry(0.22, 0.22, 0.36, 10);
-                const rimMat = M.rim;
-                [
+                VP.decoWheels(group, [
                     [-1.0, 0.5, 1.8], [1.0, 0.5, 1.8],
                     [-1.0, 0.5, -0.5], [1.0, 0.5, -0.5],
                     [-1.0, 0.5, -1.8], [1.0, 0.5, -1.8]
-                ].forEach(pos => {
-                    const wheel = new THREE.Mesh(wheelGeom, darkMat);
-                    wheel.rotation.z = Math.PI / 2;
-                    wheel.position.set(...pos);
-                    group.add(wheel);
-                    const rim = new THREE.Mesh(rimGeom, rimMat);
-                    rim.rotation.z = Math.PI / 2;
-                    rim.position.set(...pos);
-                    group.add(rim);
-                });
+                ], 0.5, 0.35, 0.22, 0.36, darkMat, M.rim);
             }
 
             return group;
