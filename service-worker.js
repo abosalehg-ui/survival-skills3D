@@ -1,5 +1,5 @@
 /* Service Worker for "النجاة في الصحراء" PWA */
-const CACHE_VERSION = 'v4';
+const CACHE_VERSION = 'v5';
 const STATIC_CACHE = `desert-survival-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `desert-survival-runtime-${CACHE_VERSION}`;
 
@@ -26,6 +26,16 @@ const CDN_OPTIONAL = [
   THREE_BASE + 'examples/jsm/postprocessing/UnrealBloomPass.js',
   THREE_BASE + 'examples/jsm/postprocessing/SMAAPass.js',
   THREE_BASE + 'examples/jsm/postprocessing/OutputPass.js',
+  THREE_BASE + 'examples/jsm/loaders/GLTFLoader.js',
+];
+
+// Same-origin optional assets: also progressive enhancement (the procedural camel is the
+// permanent fallback — see setupCamelModel() in index.html), so missing/failing to cache
+// this must never fail the install. This is the one deliberate, owner-approved exception to
+// the project's "no external assets" rule; if the file isn't present in the repo yet,
+// caching it here is a harmless no-op.
+const LOCAL_OPTIONAL = [
+  './assets/models/camel.glb',
 ];
 
 self.addEventListener('install', (event) => {
@@ -38,6 +48,10 @@ self.addEventListener('install', (event) => {
       try { await cache.addAll(CDN_CORE); } catch (e) { /* will be picked up at runtime */ }
       // CDN optional add-ons: fully best-effort, one by one.
       await Promise.all(CDN_OPTIONAL.map((u) =>
+        cache.add(u).catch(() => { /* progressive enhancement only */ })
+      ));
+      // Same-origin optional assets: same best-effort treatment.
+      await Promise.all(LOCAL_OPTIONAL.map((u) =>
         cache.add(u).catch(() => { /* progressive enhancement only */ })
       ));
       await self.skipWaiting();
