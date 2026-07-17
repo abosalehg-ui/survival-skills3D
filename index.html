@@ -1780,6 +1780,34 @@
                 usePostProcessing = false;
                 try { renderer.render(scene, camera); } catch (e2) { /* give up this frame */ }
             }
+            // renderer.info reflects the frame just drawn — read it here (the single
+            // render choke point) so the optional dev HUD covers every code path.
+            if (dbgEl) updateDiagnostics(delta || 0);
+        }
+
+        // ============= OPTIONAL DEVELOPER HUD (?debug=1) =============
+        // Purely additive, off unless the URL has ?debug=1. Shows FPS + draw calls +
+        // triangles + active quality so each future perf change can be measured on a
+        // real device (there's no browser in the dev environment).
+        const DEBUG = (() => { try { return new URLSearchParams(location.search).has('debug'); } catch (e) { return false; } })();
+        let dbgEl = null, dbgAccum = 0, dbgFrames = 0;
+        function setupDiagnostics() {
+            if (!DEBUG) return;
+            dbgEl = document.createElement('div');
+            dbgEl.style.cssText = 'position:fixed;top:4px;right:4px;z-index:9998;background:rgba(0,0,0,0.62);color:#5f5;font:11px/1.35 monospace;padding:5px 7px;border-radius:5px;pointer-events:none;white-space:pre;direction:ltr;text-align:left;';
+            document.body.appendChild(dbgEl);
+        }
+        function updateDiagnostics(delta) {
+            if (!dbgEl) return;
+            dbgAccum += delta; dbgFrames++;
+            if (dbgAccum >= 0.5) {
+                const fps = dbgFrames / dbgAccum;
+                const info = renderer.info.render;
+                const q = (SaveSystem.data && SaveSystem.data.settings.quality) || '?';
+                dbgEl.textContent =
+                    `FPS   ${fps.toFixed(0)}\ncalls ${info.calls}\ntris  ${info.triangles}\nqual  ${q}${usePostProcessing ? '+pp' : ''}`;
+                dbgAccum = 0; dbgFrames = 0;
+            }
         }
 
         function onResize() {
@@ -2111,23 +2139,27 @@
         function createClouds() {
             const level = CONFIG.levels[state.currentLevel];
             const group = new THREE.Group();
-            
+
+            // Every puff in a level shares the same colour/opacity, so build ONE material
+            // and reuse it across all ~140 puffs (was a distinct material per puff). The
+            // whole cloud group is disposed together on level change, so sharing is safe.
+            const cloudMat = new THREE.MeshBasicMaterial({
+                color: level.cloudColor,
+                transparent: true,
+                opacity: level.timeOfDay === 'night' ? 0.3 : 0.7,
+                fog: false
+            });
+
             const cloudCount = 20;
             for (let i = 0; i < cloudCount; i++) {
                 const cloudGroup = new THREE.Group();
-                
+
                 // Create fluffy cloud from multiple spheres
                 const puffCount = 5 + Math.floor(Math.random() * 5);
                 for (let j = 0; j < puffCount; j++) {
                     const size = 15 + Math.random() * 25;
                     const geom = new THREE.SphereGeometry(size, 8, 8);
-                    const mat = new THREE.MeshBasicMaterial({
-                        color: level.cloudColor,
-                        transparent: true,
-                        opacity: level.timeOfDay === 'night' ? 0.3 : 0.7,
-                        fog: false
-                    });
-                    const puff = new THREE.Mesh(geom, mat);
+                    const puff = new THREE.Mesh(geom, cloudMat);
                     puff.position.set(
                         (Math.random() - 0.5) * size * 2,
                         (Math.random() - 0.5) * size * 0.5,
@@ -2813,7 +2845,11 @@
                 const spotLight = new THREE.SpotLight(0xffffcc, 0, 100, 0.6, 0.3);
                 spotLight.position.set(x, 1.05, 3.02);
                 spotLight.target.position.set(x, -2, 50);
-                spotLight.castShadow = true;
+                // No shadow casting: two shadow-casting spotlights meant TWO extra shadow
+                // maps rendered every night frame (the other playable vehicles never did
+                // this). The moon/sun DirectionalLight already casts the primary shadow,
+                // so the visual loss is negligible and it's a real mobile-GPU win.
+                spotLight.castShadow = false;
                 group.add(spotLight);
                 group.add(spotLight.target);
                 group.headlights.push(spotLight);
@@ -5532,14 +5568,33 @@
             stars.forEach(s => {
                 s.position.z = vehicle.position.z + (s.userData.followZ || 0);
             });
-            
+
+            // Cull the goal (a whole gas-station/camp/oasis = hundreds of meshes) while it
+            // is still beyond the fog: it can't be seen, so skip drawing it for most of the
+            // level. It fades in normally as the car closes in (and stays visible for the
+            // victory camera orbit, which happens well within fogFar).
+            if (goalMarker) {
+                goalMarker.visible = (goalMarker.position.z - vehicle.position.z) < level.fogFar + 20;
+            }
+
             updateDustParticles(delta);
             updateCargo(delta);
 
             // Shared animation clock (seconds) — replaces repeated Date.now() calls.
             const t = fxUniforms.uTime.value;
             const bob = Math.sin(t * 3) * 0.15;
+            // Only animate pickups inside the visible band (behind the car .. just past the
+            // fog). Beyond the fog they can't be seen, so skip their per-frame terrain
+            // sampling + bob — cheap in story mode, meaningful in endless where the list is
+            // long. `visZFar`/`visZNear` are relative to the car (camera sits at z-14).
+            const visZFar = level.fogFar + 15;
+            const visZNear = -25;
+            const animateItem = (obj) => {
+                const dz = obj.position.z - vehicle.position.z;
+                return dz < visZFar && dz > visZNear;
+            };
             fuelCans.forEach(can => {
+                if (!animateItem(can)) return;
                 can.rotation.y += delta * 2;
                 can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + bob;
                 if (can.glowMesh) {
@@ -5550,6 +5605,7 @@
             // Animate powerups
             const pBob = Math.sin(t * 4) * 0.2;
             powerups.forEach(p => {
+                if (!animateItem(p)) return;
                 p.rotation.y += delta * 1.5;
                 if (p.innerMesh) p.innerMesh.rotation.x += delta * 2.5;
                 p.position.y = getTerrainHeight(p.position.x, p.position.z) + 1.0 + pBob;
@@ -6078,6 +6134,7 @@
             applyQualityFromSettings();
             diag('6: setupControls');
             setupControls();
+            setupDiagnostics();
             diag('7: gameLoop');
             gameLoop();
             diag('8: tutorial check');
