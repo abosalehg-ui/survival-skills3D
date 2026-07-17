@@ -3912,20 +3912,27 @@
         // the two must never drift (tests/logic.test.mjs guards this). The block between
         // the @terrain-testable markers is what that test extracts and evaluates.
         // @terrain-testable-start
-        // Goal-flatten: near the goal the terrain eases to y≈0 so the goal platform/camp
-        // (built assuming flat ground at y=0) sits ON the surface instead of being buried
-        // or floating up to ±1.85*duneHeight. `state.goalFlattenZ` is the goal's world Z
-        // (set in setupLevel), or null in endless mode / any level without a goal.
+        // Goal-flatten: the goal (platform/camp/oasis + its parked vehicles) is built
+        // assuming FLAT ground at y=0, and its footprint spans ~±20u around the goal Z.
+        // So we flatten a genuine PLATEAU (g=0, terrain height 0) within GOAL_FLAT_RADIUS,
+        // then ease back to normal terrain with a Gaussian ramp — otherwise props on the
+        // plateau's edges float/sink on the still-sloped ground (the old pure-Gaussian
+        // version only reached 0 at the exact centre). `state.goalFlattenZ` is the goal's
+        // world Z (set in setupLevel), or null in endless / any level without a goal.
         // Returns { g, gz }: g multiplies the height, gz = dg/dz for the analytic slope.
-        const GOAL_FLATTEN_SIGMA = 22;   // ~±40u transition, so the car eases onto the pad
+        const GOAL_FLAT_RADIUS = 24;     // fully-flat plateau half-width around the goal
+        const GOAL_FLATTEN_SIGMA = 16;   // Gaussian ramp beyond the plateau
         function goalFlatten(z) {
             const Z = state.goalFlattenZ;
             if (Z == null) return { g: 1, gz: 0 };
-            const d = z - Z;
+            const u = z - Z;
+            const au = Math.abs(u);
+            if (au <= GOAL_FLAT_RADIUS) return { g: 0, gz: 0 };   // flat clearing over the goal
+            const dd = au - GOAL_FLAT_RADIUS;
             const sig2 = GOAL_FLATTEN_SIGMA * GOAL_FLATTEN_SIGMA;
-            const flat = Math.exp(-(d * d) / (2 * sig2));   // 1 at the goal → 0 far away
-            // g = 1 - flat; d/dz(1 - flat) = flat * d / sig2
-            return { g: 1 - flat, gz: flat * d / sig2 };
+            const flat = Math.exp(-(dd * dd) / (2 * sig2));
+            // g = 1 - flat; dd = |u| - R so d(dd)/dz = sign(u); dg/dz = flat * dd * sign(u) / sig2
+            return { g: 1 - flat, gz: flat * dd * (u >= 0 ? 1 : -1) / sig2 };
         }
 
         function getTerrainHeight(x, z) {
@@ -3945,15 +3952,20 @@
 
             const roadWidth = level.narrowPath ? 6 : 10;
             const roadFactor = Math.exp(-(x * x) / (roadWidth * roadWidth));
-            lateral *= (1 - roadFactor * 0.7);
+            lateral *= (1 - roadFactor * 0.82);   // flatten the driving lane more (was 0.7)
 
             // Rolling hills ALONG the direction of travel. These are NOT flattened on the
             // road, so the car repeatedly climbs and descends real crests/dips instead of
             // gliding on a flat strip. Mixed wavelengths give long swells + shorter rolls.
+            // Amplitude is CAPPED (min(dune, 1.0)): on the tall-dune levels (e.g. the
+            // mountain pass, dune 2.5) the raw ±1.85*dune dips were deep enough to swallow
+            // the car behind a foreground crest. Lateral/off-road dunes keep the full dune
+            // height for scenery; only the drivable rolls are limited.
+            const hillAmp = Math.min(dune, 0.9);
             let hills = 0;
-            hills += Math.cos(z * 0.05 - 0.4 + P) * dune * 0.6;    // long swells (~125u)
-            hills += Math.sin(z * 0.11 + 1.3 + P) * dune * 0.85;   // main rolling hills (~57u)
-            hills += Math.sin(z * 0.21 + 0.6 + P) * dune * 0.4;    // shorter undulations (~30u)
+            hills += Math.cos(z * 0.05 - 0.4 + P) * hillAmp * 0.6;    // long swells (~125u)
+            hills += Math.sin(z * 0.11 + 1.3 + P) * hillAmp * 0.85;   // main rolling hills (~57u)
+            hills += Math.sin(z * 0.21 + 0.6 + P) * hillAmp * 0.4;    // shorter undulations (~30u)
 
             return (lateral + hills) * goalFlatten(z).g;
         }
@@ -3979,20 +3991,22 @@
             const roadWidth = level.narrowPath ? 6 : 10;
             const w2 = roadWidth * roadWidth;
             const roadFactor = Math.exp(-(x * x) / w2);
-            const damp = 1 - roadFactor * 0.7;
+            const damp = 1 - roadFactor * 0.82;
 
             // Height (before goal-flatten) and its raw partials — the same base the
-            // getTerrainHeight() above returns pre-flatten.
-            const hills = Math.cos(z * 0.05 - 0.4 + P) * dune * 0.6
-                        + Math.sin(z * 0.11 + 1.3 + P) * dune * 0.85
-                        + Math.sin(z * 0.21 + 0.6 + P) * dune * 0.4;
+            // getTerrainHeight() above returns pre-flatten. Hills use the SAME capped
+            // amplitude as getTerrainHeight (min(dune, 0.9)) so the two stay in sync.
+            const hillAmp = Math.min(dune, 0.9);
+            const hills = Math.cos(z * 0.05 - 0.4 + P) * hillAmp * 0.6
+                        + Math.sin(z * 0.11 + 1.3 + P) * hillAmp * 0.85
+                        + Math.sin(z * 0.21 + 0.6 + P) * hillAmp * 0.4;
             const base = lateral * damp + hills;
-            // d/dx [lateral * damp] = lx*damp + lateral * 0.7 * roadFactor * 2x/w2
-            const dxBase = lx * damp + lateral * 1.4 * roadFactor * x / w2;
+            // d/dx [lateral * damp] = lx*damp + lateral * 0.82 * roadFactor * 2x/w2
+            const dxBase = lx * damp + lateral * 1.64 * roadFactor * x / w2;
             const dzBase = lz * damp
-                - Math.sin(z * 0.05 - 0.4 + P) * 0.05 * dune * 0.6
-                + Math.cos(z * 0.11 + 1.3 + P) * 0.11 * dune * 0.85
-                + Math.cos(z * 0.21 + 0.6 + P) * 0.21 * dune * 0.4;
+                - Math.sin(z * 0.05 - 0.4 + P) * 0.05 * hillAmp * 0.6
+                + Math.cos(z * 0.11 + 1.3 + P) * 0.11 * hillAmp * 0.85
+                + Math.cos(z * 0.21 + 0.6 + P) * 0.21 * hillAmp * 0.4;
 
             // Product rule for H = base * g(z): ∂x = dxBase*g, ∂z = dzBase*g + base*g'.
             const { g, gz } = goalFlatten(z);
