@@ -905,8 +905,9 @@
             <div class="modal-row">
                 <span class="modal-label">🖼 الجودة</span>
                 <select id="qualitySelect">
+                    <option value="auto" selected>تلقائية</option>
                     <option value="low">منخفضة</option>
-                    <option value="medium" selected>متوسطة</option>
+                    <option value="medium">متوسطة</option>
                     <option value="high">عالية</option>
                 </select>
             </div>
@@ -1270,7 +1271,7 @@
                     settings: {
                         volume: 0.5,
                         sensitivity: 1.0,
-                        quality: 'medium',
+                        quality: 'auto',   // adaptive by default: struggling devices self-tune down
                         vibration: true
                     },
                     campaign: {
@@ -1804,8 +1805,9 @@
                 const fps = dbgFrames / dbgAccum;
                 const info = renderer.info.render;
                 const q = (SaveSystem.data && SaveSystem.data.settings.quality) || '?';
+                const qLabel = q + (autoQualityEnabled ? ('#' + autoTier) : '') + (usePostProcessing ? '+pp' : '');
                 dbgEl.textContent =
-                    `FPS   ${fps.toFixed(0)}\ncalls ${info.calls}\ntris  ${info.triangles}\nqual  ${q}${usePostProcessing ? '+pp' : ''}`;
+                    `FPS   ${fps.toFixed(0)}\ncalls ${info.calls}\ntris  ${info.triangles}\nqual  ${qLabel}`;
                 dbgAccum = 0; dbgFrames = 0;
             }
         }
@@ -5669,6 +5671,9 @@
 
             updateHUD();
 
+            // Adaptive quality: sample FPS and step down the cost ladder if sustained low.
+            updateAutoQuality();
+
             // Win condition. Return right after so the fuel/HP-zero check below can't
             // overwrite a win with a game-over in the SAME frame — arriving on the last
             // drop of fuel (or HP) must count as a win, not a defeat.
@@ -5887,9 +5892,64 @@
             audio.masterGain.gain.value = SaveSystem.data.settings.volume * 0.6;
         }
 
+        // ============= ADAPTIVE QUALITY (auto mode) =============
+        // When quality === 'auto', the renderer starts at full quality and steps DOWN a
+        // cost ladder whenever the average FPS stays under 45 for a 3s window. Down-only
+        // within a session (it never upgrades) so it can't oscillate, and the 3s average
+        // ignores transient hitches like level loads. Manual low/medium/high are untouched.
+        let autoQualityEnabled = false;
+        let autoTier = 0;
+        const AUTO_MAX_TIER = 3;
+        let autoFrames = 0, autoWindowStart = 0;
+        const nowMs = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+        function resetAutoWindow() { autoFrames = 0; autoWindowStart = nowMs(); }
+        function applyAutoTier(tier) {
+            if (!renderer) return;
+            // Ladder order matches the plan: drop resolution first, then bloom, then shadows.
+            const ladder = [
+                { pr: 1.5,  shadows: true,  pp: true  },   // 0 — full
+                { pr: 1.25, shadows: true,  pp: true  },   // 1 — lower resolution
+                { pr: 1.0,  shadows: true,  pp: false },   // 2 — no bloom
+                { pr: 1.0,  shadows: false, pp: false },   // 3 — no shadows (floor)
+            ];
+            const t = ladder[Math.max(0, Math.min(AUTO_MAX_TIER, tier))];
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, t.pr));
+            renderer.shadowMap.enabled = t.shadows;
+            usePostProcessing = t.pp && postProcessingReady;
+            if (bloomPass) bloomPass.strength = 0.5;
+            if (composer) composer.setSize(window.innerWidth, window.innerHeight);
+            if (smaaPass) smaaPass.setSize(window.innerWidth * renderer.getPixelRatio(), window.innerHeight * renderer.getPixelRatio());
+        }
+        function updateAutoQuality() {
+            if (!autoQualityEnabled) return;
+            // Only measure during continuous gameplay. Menus/pause/victory-orbit render at
+            // half rate by design (~30fps), which would look like a struggling device.
+            if (!state.isPlaying || state.isPaused || state.cameraRotating) { resetAutoWindow(); return; }
+            autoFrames++;
+            const now = nowMs();
+            const elapsed = now - autoWindowStart;
+            if (elapsed >= 3000) {
+                const fps = autoFrames * 1000 / elapsed;
+                if (fps < 45 && autoTier < AUTO_MAX_TIER) {
+                    autoTier++;
+                    applyAutoTier(autoTier);
+                }
+                resetAutoWindow();
+            }
+        }
+
         function applyQualityFromSettings() {
             if (!renderer || !SaveSystem.data) return;
             const q = SaveSystem.data.settings.quality;
+            if (q === 'auto') {
+                // (Re)start the adaptive ladder at full quality; it ratchets down as needed.
+                autoQualityEnabled = true;
+                autoTier = 0;
+                applyAutoTier(0);
+                resetAutoWindow();
+                return;
+            }
+            autoQualityEnabled = false;
             if (q === 'low') {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
                 renderer.shadowMap.enabled = false;
