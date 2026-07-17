@@ -239,6 +239,36 @@
             transform: scale(0.92);
         }
 
+        /* Gas / brake pedals — bottom-centre, shown on touch devices alongside steering. */
+        #pedalButtons {
+            display: none;
+            position: fixed;
+            bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+            left: 50%;
+            transform: translateX(-50%);
+            flex-direction: column;
+            gap: 10px;
+            z-index: 90;
+            pointer-events: none;
+        }
+        #pedalButtons.visible { display: flex; }
+        .pedal-btn {
+            pointer-events: auto;
+            width: clamp(54px, 13vw, 78px);
+            height: clamp(54px, 13vw, 78px);
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.35);
+            background: rgba(0,0,0,0.28);
+            color: rgba(255,255,255,0.85);
+            font-size: clamp(1.2rem, 5vw, 1.8rem);
+            display: flex; align-items: center; justify-content: center;
+            user-select: none; -webkit-user-select: none; touch-action: none;
+            transition: background 0.1s ease, transform 0.1s ease;
+            font-family: inherit;
+        }
+        #gasBtn.pressed { background: rgba(90,220,120,0.5); transform: scale(0.92); }
+        #brakeBtn.pressed { background: rgba(230,90,90,0.5); transform: scale(0.92); }
+
         /* Fuel Pickup Notification */
         #fuelNotification {
             position: fixed;
@@ -809,6 +839,12 @@
         <button id="steerRightBtn" class="steer-btn" aria-label="انعطاف يمين">▶</button>
     </div>
 
+    <!-- Gas / brake pedals (touch devices) -->
+    <div id="pedalButtons">
+        <button id="gasBtn" class="pedal-btn" aria-label="تسريع">▲</button>
+        <button id="brakeBtn" class="pedal-btn" aria-label="فرملة">▼</button>
+    </div>
+
     <!-- Touch Hint -->
     <div id="touchHint">👆 اسحب يميناً ويساراً للتحكم</div>
     
@@ -927,8 +963,9 @@
         <div class="modal-card">
             <h2 class="modal-title">📖 كيف ألعب</h2>
             <ul class="tutorial-list">
-                <li>📱 <b>الجوال</b>: اسحب الشاشة يميناً ويساراً للتحكم</li>
-                <li>⌨️ <b>الكيبورد</b>: أسهم/WASD للتوجيه، Esc/P للإيقاف</li>
+                <li>📱 <b>الجوال</b>: اسحب يميناً/يساراً للتوجيه، وأزرار ▲/▼ للتسريع والفرملة</li>
+                <li>⌨️ <b>الكيبورد</b>: ←→/A D للتوجيه، ↑↓/W S للتسريع والفرملة، Esc/P للإيقاف</li>
+                <li>🏎️ <b>غاز</b> = أسرع لكن أكثر استهلاكاً للوقود؛ <b>فرملة</b> = أبطأ وأوفر وأأمن</li>
                 <li>⛽ التقط <b>علب الوقود الخضراء</b> (+10 وقود، +5 صحة)</li>
                 <li>⚡ <b>تعزيز السرعة</b> (أصفر): سرعة 1.5× لمدة 5 ثوان</li>
                 <li>🛡️ <b>الدرع</b> (سماوي): يحميك من الاصطدام التالي</li>
@@ -1526,6 +1563,9 @@
             vehicleY: 0,
             isGrounded: true,
             cameraY: 7,                    // smoothed camera height (lags vehicle so bobbing shows)
+            shake: 0,                      // camera-shake impulse (impacts); decays each frame
+            throttle: 1.0,                 // speed multiplier target from gas/brake (0.6..1.15)
+            throttleApplied: 1.0,          // smoothed throttle actually applied to speed
             lastTrackZ: -999,              // last z where a tire-track pair was dropped
             trackIndex: 0,                 // ring-buffer cursor into the tire-track pool
             lastCollisionTime: 0,
@@ -1609,6 +1649,7 @@
         const hpFill = document.getElementById('hpFill');
         const hpBar = document.getElementById('hpBar');
         const steerButtonsEl = document.getElementById('steerButtons');
+        const pedalButtonsEl = document.getElementById('pedalButtons');
         const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
 
         // Shared red→amber→green gradient for fuel/HP bars (was duplicated per bar).
@@ -4850,6 +4891,9 @@
             state.distance = 0;
             state.steering = 0;
             state.targetSteering = 0;
+            state.throttle = 1.0;
+            state.throttleApplied = 1.0;
+            state.shake = 0;
             state.vehicleVelocityY = 0;
             // Start the car resting on the terrain at the origin (terrain is now hilly,
             // so spawning at a flat groundOffset would make it pop up on the first frame).
@@ -4984,6 +5028,18 @@
                 else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle * stormSteerFactor();
             };
 
+            // Gas / brake (throttle). Held keys set a target multiplier; releasing returns
+            // to cruise (1.0). Shared with the on-screen pedal buttons below.
+            const throttleKeys = { gas: false, brake: false };
+            const isGasKey = (k) => k === 'ArrowUp' || k === 'w' || k === 'W';
+            const isBrakeKey = (k) => k === 'ArrowDown' || k === 's' || k === 'S';
+            const applyThrottle = () => {
+                if (throttleKeys.gas === throttleKeys.brake) state.throttle = 1.0;
+                else state.throttle = throttleKeys.gas ? 1.15 : 0.6;
+            };
+            // Exposed so the touch pedal buttons drive the same target.
+            window.__setThrottle = (t) => { state.throttle = t; };
+
             document.addEventListener('keydown', (e) => {
                 // Pause toggle (works during play)
                 if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && state.isPlaying && !state.cameraRotating) {
@@ -4993,11 +5049,15 @@
                 if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
                 if (isLeftKey(e.key)) { steerKeys.left = true; applyKeySteering(); }
                 else if (isRightKey(e.key)) { steerKeys.right = true; applyKeySteering(); }
+                else if (isGasKey(e.key)) { throttleKeys.gas = true; applyThrottle(); }
+                else if (isBrakeKey(e.key)) { throttleKeys.brake = true; applyThrottle(); }
             });
 
             document.addEventListener('keyup', (e) => {
                 if (isLeftKey(e.key)) { steerKeys.left = false; applyKeySteering(); }
                 else if (isRightKey(e.key)) { steerKeys.right = false; applyKeySteering(); }
+                else if (isGasKey(e.key)) { throttleKeys.gas = false; applyThrottle(); }
+                else if (isBrakeKey(e.key)) { throttleKeys.brake = false; applyThrottle(); }
             });
 
             // Auto-pause on tab hidden
@@ -5032,8 +5092,88 @@
                 bindSteer(document.getElementById('steerLeftBtn'), 1);
                 bindSteer(document.getElementById('steerRightBtn'), -1);
             }
+
+            // On-screen gas / brake pedals (touch devices). Hold to set the throttle
+            // target; release returns to cruise (1.0). Same channel as the keyboard.
+            if (pedalButtonsEl && isTouchDevice) {
+                const bindPedal = (btn, value) => {
+                    if (!btn) return;
+                    const press = (e) => {
+                        e.preventDefault();
+                        if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
+                        state.throttle = value;
+                        btn.classList.add('pressed');
+                    };
+                    const release = (e) => {
+                        if (e) e.preventDefault();
+                        state.throttle = 1.0;
+                        btn.classList.remove('pressed');
+                    };
+                    btn.addEventListener('touchstart', press, { passive: false });
+                    btn.addEventListener('touchend', release, { passive: false });
+                    btn.addEventListener('touchcancel', release, { passive: false });
+                };
+                bindPedal(document.getElementById('gasBtn'), 1.15);
+                bindPedal(document.getElementById('brakeBtn'), 0.6);
+            }
         }
         
+        // ============= IMPACT DEBRIS (pooled, cosmetic) =============
+        // A small ring-buffer pool of shard meshes reused for every impact — allocation-free
+        // after warm-up. Shared geometry + two materials (rock/hole). Not tracked by the
+        // level-teardown arrays, so the pool persists across levels; shards decay in <1.5s.
+        let debris = null;
+        function ensureDebris() {
+            if (debris) return debris;
+            const geo = new THREE.BoxGeometry(0.16, 0.16, 0.16);
+            const matRock = new THREE.MeshStandardMaterial({ color: 0x8B7355, roughness: 0.95 });
+            const matDark = new THREE.MeshStandardMaterial({ color: 0x2a2018, roughness: 1 });
+            const pool = [];
+            for (let i = 0; i < 28; i++) {
+                const m = new THREE.Mesh(geo, matRock);
+                m.visible = false;
+                scene.add(m);
+                pool.push({ mesh: m, vel: new THREE.Vector3(), life: 0 });
+            }
+            debris = { pool, cursor: 0, matRock, matDark };
+            return debris;
+        }
+        function spawnDebris(pos, dark) {
+            try {
+                const d = ensureDebris();
+                const count = 6 + Math.floor(Math.random() * 4);
+                for (let k = 0; k < count; k++) {
+                    const p = d.pool[d.cursor % d.pool.length]; d.cursor++;
+                    p.mesh.material = dark ? d.matDark : d.matRock;
+                    p.mesh.position.set(pos.x + (Math.random() - 0.5) * 0.6, pos.y + 0.3 + Math.random() * 0.4, pos.z + (Math.random() - 0.5) * 0.6);
+                    p.mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+                    p.mesh.scale.setScalar(0.5 + Math.random());
+                    p.mesh.visible = true;
+                    p.vel.set((Math.random() - 0.5) * 6, 3 + Math.random() * 4, (Math.random() - 0.5) * 6 - 2);
+                    p.life = 0.8 + Math.random() * 0.5;
+                }
+            } catch (e) { /* debris are purely cosmetic */ }
+        }
+        function updateDebris(delta) {
+            if (!debris) return;
+            for (const p of debris.pool) {
+                if (p.life <= 0) continue;
+                p.life -= delta;
+                p.vel.y -= 22 * delta;
+                p.mesh.position.x += p.vel.x * delta;
+                p.mesh.position.y += p.vel.y * delta;
+                p.mesh.position.z += p.vel.z * delta;
+                p.mesh.rotation.x += p.vel.z * delta;
+                p.mesh.rotation.z += p.vel.x * delta;
+                const g = getTerrainHeight(p.mesh.position.x, p.mesh.position.z);
+                if (p.mesh.position.y < g + 0.09) {
+                    p.mesh.position.y = g + 0.09;
+                    p.vel.x *= 0.3; p.vel.z *= 0.3; p.vel.y = Math.abs(p.vel.y) * 0.25;
+                }
+                if (p.life <= 0) p.mesh.visible = false;
+            }
+        }
+
         // ============= COLLISION DETECTION =============
         function checkCollisions() {
             const vehiclePos = vehicle.position;
@@ -5069,12 +5209,17 @@
                         }
 
                         // Apply damage based on obstacle type
-                        const damageBase = obstacle.userData.type === 'hole' ? CONFIG.damage.holeDamage : CONFIG.damage.rockDamage;
+                        const isHole = obstacle.userData.type === 'hole';
+                        const damageBase = isHole ? CONFIG.damage.holeDamage : CONFIG.damage.rockDamage;
                         const damage = damageBase / durability;
                         state.hp -= damage;
                         state.fuel -= CONFIG.damage.fuelLossOnHit;
                         state.damageTakenThisLevel = true;
                         audio.playCrash();
+                        // Impact feedback: camera kick + a burst of debris shards so the
+                        // hit "lands" instead of the obstacle silently vanishing.
+                        state.shake = Math.min(0.6, state.shake + (isHole ? 0.3 : 0.5));
+                        spawnDebris(obstacle.position, isHole);
                         if (SaveSystem.data && SaveSystem.data.settings.vibration && navigator.vibrate) {
                             navigator.vibrate(120);
                         }
@@ -5457,10 +5602,13 @@
             const steerBlend = 1 - Math.pow(CONFIG.vehicle.steeringDamping, delta * 60);
             state.steering += (state.targetSteering - state.steering) * steerBlend;
 
-            // Vehicle stats + boost multiplier
+            // Vehicle stats + boost multiplier + throttle (gas/brake).
             const baseSpeed = state.activeVehicle ? state.activeVehicle.stats.topSpeed : CONFIG.vehicle.speed;
             const boostActive = state.boostUntil > state.timeElapsed;
-            const speed = baseSpeed * (boostActive ? CONFIG.powerups.boostMultiplier : 1.0);
+            // Ease the applied throttle toward its target so gas/brake feel like
+            // acceleration rather than an instant speed step.
+            state.throttleApplied += (state.throttle - state.throttleApplied) * Math.min(1, delta * 3);
+            const speed = baseSpeed * (boostActive ? CONFIG.powerups.boostMultiplier : 1.0) * state.throttleApplied;
 
             // Mode-specific tick
             state.timeElapsed += delta;
@@ -5618,9 +5766,12 @@
             vehicle.rotation.x = -terrainPitch * 1.1;
 
             if (vehicle.wheels) {
-                vehicle.wheels.forEach(wheel => {
+                vehicle.wheels.forEach((wheel, i) => {
                     if (wheel.children[0]) wheel.children[0].rotation.x += speed * delta * 2;
                     if (wheel.children[1]) wheel.children[1].rotation.x += speed * delta * 2;
+                    // Front wheels (first two) visibly steer with the input, a touch more
+                    // than the body yaw so the turn reads clearly.
+                    if (i < 2) wheel.rotation.y = state.steering * 0.6;
                 });
             }
 
@@ -5634,6 +5785,17 @@
             camera.position.y = state.cameraY;
             camera.position.z = vehicle.position.z - 14;
             camera.lookAt(vehicle.position.x * 0.5, vehicle.position.y + 2, vehicle.position.z + 18);
+
+            // Camera shake: an impact sets state.shake (fast decay); a sandstorm adds a
+            // small continuous tremor. Applied as a post-lookAt positional jitter so it
+            // never affects gameplay positions or the aim point.
+            state.shake *= Math.pow(0.02, delta);
+            if (state.shake < 0.001) state.shake = 0;
+            const shakeAmt = state.shake + (state.sandstormActive ? 0.05 : 0);
+            if (shakeAmt > 0) {
+                camera.position.x += (Math.random() - 0.5) * shakeAmt;
+                camera.position.y += (Math.random() - 0.5) * shakeAmt;
+            }
 
             // The sun/moon (and its shadow frustum) travels with the car; with a
             // fixed light the car drove out of the frustum and shadows vanished
@@ -5666,6 +5828,7 @@
             }
 
             updateDustParticles(delta);
+            updateDebris(delta);
             updateCargo(delta);
 
             // Shared animation clock (seconds) — replaces repeated Date.now() calls.
@@ -5707,7 +5870,9 @@
             }
 
             const fuelEff = state.activeVehicle ? state.activeVehicle.stats.fuelEfficiency : 1.0;
-            state.fuel -= level.fuelConsumption * fuelEff * delta * 60;
+            // Fuel burn scales with the applied throttle: flooring it is faster but thirstier,
+            // braking sips fuel — a real tactical trade-off (speed vs range/reaction time).
+            state.fuel -= level.fuelConsumption * fuelEff * state.throttleApplied * delta * 60;
 
             checkCollisions();
 
@@ -5750,6 +5915,7 @@
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
             if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
+            if (pedalButtonsEl) pedalButtonsEl.classList.remove('visible');
 
             // Save best times + unlock achievements
             const lvl = state.currentLevel;
@@ -5800,6 +5966,7 @@
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
             if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
+            if (pedalButtonsEl) pedalButtonsEl.classList.remove('visible');
 
             // Save endless best
             if (state.mode === 'endless') {
@@ -5845,6 +6012,7 @@
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
             if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
+            if (pedalButtonsEl && isTouchDevice) pedalButtonsEl.classList.add('visible');
             audio.startEngine();
         }
 
@@ -5858,6 +6026,7 @@
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
             if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
+            if (pedalButtonsEl && isTouchDevice) pedalButtonsEl.classList.add('visible');
             touchHint.style.display = 'block';
 
             audio.init();
@@ -5899,6 +6068,7 @@
             hud.style.display = 'flex';
             pauseBtn.style.display = 'flex';
             if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
+            if (pedalButtonsEl && isTouchDevice) pedalButtonsEl.classList.add('visible');
             audio.startEngine();
         }
 
@@ -5917,6 +6087,7 @@
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
             if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
+            if (pedalButtonsEl) pedalButtonsEl.classList.remove('visible');
             startScreen.style.display = 'flex';
             state.isPlaying = false;
             state.isPaused = false;
