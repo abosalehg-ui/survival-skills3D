@@ -3275,6 +3275,10 @@
             box(parent, w, h, d, mat, x, y, z, opts) {
                 return VP.add(parent, new THREE.BoxGeometry(w, h, d), mat, x, y, z, opts);
             },
+            // Cylinder part.
+            cyl(parent, rTop, rBot, h, seg, mat, x, y, z, opts) {
+                return VP.add(parent, new THREE.CylinderGeometry(rTop, rBot, h, seg), mat, x, y, z, opts);
+            },
             // A static wheel set for parked (non-playable) vehicles: chunky tyre + rim at
             // each position. Identical across the jeep/pickup/small-truck decoration bodies
             // (only the radii/width and positions differ) — this replaces three copies.
@@ -3284,6 +3288,24 @@
                 positions.forEach(pos => {
                     VP.add(parent, tyreGeom, tyreMat, pos[0], pos[1], pos[2], { rz: Math.PI / 2 });
                     VP.add(parent, rimGeom, rimMat, pos[0], pos[1], pos[2], { rz: Math.PI / 2 });
+                });
+            },
+            // Mud flaps behind wheels: one box per [x, z] anchor, placed at (x, y, z + zOff).
+            // Same construction in all three decoration bodies (only dims/anchors differ).
+            mudFlaps(parent, mat, anchors, w, h, d, y, zOff) {
+                const geom = new THREE.BoxGeometry(w, h, d);
+                anchors.forEach(([x, z]) => VP.add(parent, geom, mat, x, y, z + zOff));
+            },
+            // Box-housing side mirror (stalk + housing + glass), mirrored on both sides.
+            // Shared by the pickup and small-truck bodies (the jeep uses a round housing).
+            boxMirror(parent, bodyMat, glassMat, opts) {
+                [-1, 1].forEach(side => {
+                    VP.cyl(parent, opts.stalkR, opts.stalkR, opts.stalkLen, 6, bodyMat,
+                        side * opts.stalkX, opts.y, opts.z, { rz: Math.PI / 2 });
+                    VP.box(parent, opts.hw, opts.hh, opts.hd, bodyMat,
+                        side * opts.housingX, opts.housingY, opts.z);
+                    VP.box(parent, 0.02, opts.gh, opts.gd, glassMat,
+                        side * opts.glassX, opts.housingY, opts.z);
                 });
             },
         };
@@ -3459,11 +3481,7 @@
             });
 
             // Mud flaps behind wheels
-            [[-0.9, -1.5], [0.9, -1.5]].forEach(([x, z]) => {
-                const flap = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.30, 0.18), trimMat);
-                flap.position.set(x, 0.30, z - 0.42);
-                group.add(flap);
-            });
+            VP.mudFlaps(group, trimMat, [[-0.9, -1.5], [0.9, -1.5]], 0.04, 0.30, 0.18, 0.30, -0.42);
 
             // License plate (rear)
             const plate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.16, 0.02), M.plate);
@@ -3614,17 +3632,10 @@
             });
 
             // Side mirrors
-            [-1, 1].forEach(side => {
-                const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.16, 6), darkMat);
-                stalk.rotation.z = Math.PI / 2;
-                stalk.position.set(side * 1.04, 1.65, 1.35);
-                group.add(stalk);
-                const mirrorHousing = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.16, 0.14), darkMat);
-                mirrorHousing.position.set(side * 1.13, 1.65, 1.35);
-                group.add(mirrorHousing);
-                const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.12, 0.10), M.mirrorGlass);
-                mirrorGlass.position.set(side * 1.19, 1.65, 1.35);
-                group.add(mirrorGlass);
+            VP.boxMirror(group, darkMat, M.mirrorGlass, {
+                stalkR: 0.018, stalkLen: 0.16, stalkX: 1.04, y: 1.65, z: 1.35,
+                hw: 0.10, hh: 0.16, hd: 0.14, housingX: 1.13, housingY: 1.65,
+                gh: 0.12, gd: 0.10, glassX: 1.19,
             });
 
             // Door seams + handles
@@ -3653,11 +3664,7 @@
             });
 
             // Mud flaps behind wheels (front and rear)
-            [[-1.0, 1.5], [1.0, 1.5], [-1.0, -1.2], [1.0, -1.2]].forEach(([x, z]) => {
-                const flap = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.32, 0.18), trimMat);
-                flap.position.set(x, 0.30, z - 0.42);
-                group.add(flap);
-            });
+            VP.mudFlaps(group, trimMat, [[-1.0, 1.5], [1.0, 1.5], [-1.0, -1.2], [1.0, -1.2]], 0.04, 0.32, 0.18, 0.30, -0.42);
 
             // Roof rack
             const rackMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 });
@@ -3821,17 +3828,10 @@
             });
 
             // Large side mirrors (truck-style)
-            [-1, 1].forEach(side => {
-                const stalk = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.18, 6), darkMat);
-                stalk.rotation.z = Math.PI / 2;
-                stalk.position.set(side * 1.05, 1.75, 2.10);
-                group.add(stalk);
-                const mirrorHousing = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.18), darkMat);
-                mirrorHousing.position.set(side * 1.16, 1.70, 2.10);
-                group.add(mirrorHousing);
-                const mirrorGlass = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.24, 0.14), M.mirrorGlass);
-                mirrorGlass.position.set(side * 1.23, 1.70, 2.10);
-                group.add(mirrorGlass);
+            VP.boxMirror(group, darkMat, M.mirrorGlass, {
+                stalkR: 0.022, stalkLen: 0.18, stalkX: 1.05, y: 1.75, z: 2.10,
+                hw: 0.12, hh: 0.28, hd: 0.18, housingX: 1.16, housingY: 1.70,
+                gh: 0.24, gd: 0.14, glassX: 1.23,
             });
 
             // Door seams + handles
@@ -3869,11 +3869,7 @@
             });
 
             // Mud flaps behind wheels (front, mid, rear)
-            [[-1.0, 1.8], [1.0, 1.8], [-1.0, -0.5], [1.0, -0.5], [-1.0, -1.8], [1.0, -1.8]].forEach(([x, z]) => {
-                const flap = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.36, 0.20), trimMat);
-                flap.position.set(x, 0.32, z - 0.47);
-                group.add(flap);
-            });
+            VP.mudFlaps(group, trimMat, [[-1.0, 1.8], [1.0, 1.8], [-1.0, -0.5], [1.0, -0.5], [-1.0, -1.8], [1.0, -1.8]], 0.04, 0.36, 0.20, 0.32, -0.47);
 
             // License plate (rear)
             const plate = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.18, 0.02), M.plate);
