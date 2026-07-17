@@ -1258,10 +1258,57 @@
         const MODES = [
             { id: 'story', name: 'القصة', icon: '🗺', desc: '6 مراحل متتالية' },
             { id: 'timeTrial', name: 'سباق الوقت', icon: '⏱', desc: 'وصول قبل انتهاء الوقت' },
-            { id: 'endless', name: 'لا نهائي', icon: '♾', desc: 'تحدّى نفسك بأطول مسافة' }
+            { id: 'endless', name: 'لا نهائي', icon: '♾', desc: 'تحدّى نفسك بأطول مسافة' },
+            { id: 'daily', name: 'التحدي اليومي', icon: '📅', desc: 'بذرة يومية ثابتة للجميع' }
         ];
 
         const TIME_TRIAL_LIMITS = [55, 70, 65, 80, 70, 95]; // seconds per level
+
+        // ============= STAR RATING (story) =============
+        // Pure, testable: 1 star for finishing, +1 for a clean run (no damage), +1 for
+        // beating par time. Kept separate from rendering so tests/logic.test.mjs can check it.
+        // @stars-testable-start
+        function starParSeconds(distance) { return (distance / 18) * 1.15; }   // ~cruise time +15%
+        function computeStars(damageTaken, time, par) {
+            let s = 1;
+            if (!damageTaken) s++;
+            if (time <= par) s++;
+            return Math.max(1, Math.min(3, s));
+        }
+        // @stars-testable-end
+
+        // ============= SEEDED RNG (daily challenge) =============
+        // mulberry32 + a string hash so a given day yields the same obstacle stream for
+        // everyone. Only the daily mode swaps `rand()` onto the seeded generator; every
+        // other mode keeps Math.random. Kept pure/testable for determinism checks.
+        // @rng-testable-start
+        function hashStr(str) {
+            let h = 1779033703 ^ str.length;
+            for (let i = 0; i < str.length; i++) {
+                h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+                h = (h << 13) | (h >>> 19);
+            }
+            return (h ^ (h >>> 16)) >>> 0;
+        }
+        function mulberry32(seed) {
+            let a = seed >>> 0;
+            return function () {
+                a |= 0; a = (a + 0x6D2B79F5) | 0;
+                let t = Math.imul(a ^ (a >>> 15), 1 | a);
+                t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+                return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+            };
+        }
+        function todaySeedString() {
+            const d = new Date();
+            return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+        }
+        // @rng-testable-end
+
+        // Active randomness source for spawn LAYOUT. Daily mode points this at a seeded
+        // generator (set in setupLevel); everything else leaves it as Math.random.
+        let _spawnRng = null;
+        const rand = () => (_spawnRng || Math.random)();
 
         // ============= ACHIEVEMENTS =============
         const ACHIEVEMENTS = [
@@ -1293,6 +1340,10 @@
                 if (!this.data || !this.data.schemaVersion) {
                     this.data = this.defaults();
                 }
+                // Forward-compat: ensure fields added after v1 exist on older saves.
+                if (!this.data.campaign) this.data.campaign = { highestUnlocked: 0, bestTimes: {}, perfectRuns: [] };
+                if (!this.data.campaign.stars) this.data.campaign.stars = {};
+                if (!this.data.daily) this.data.daily = { date: null, best: 0 };
                 return this.data;
             },
             save() {
@@ -1314,10 +1365,12 @@
                     campaign: {
                         highestUnlocked: 0,
                         bestTimes: {},
-                        perfectRuns: []
+                        perfectRuns: [],
+                        stars: {}            // { levelIndex: 1..3 }
                     },
                     timeTrial: { bestTimes: {} },
                     endless: { bestDistance: 0, runsCompleted: 0 },
+                    daily: { date: null, best: 0 },   // best distance for today's seed
                     vehicles: {
                         selectedId: 'landCruiser',
                         played: []
@@ -1575,6 +1628,8 @@
 
             // New: mode + vehicle stats
             mode: 'story',                 // 'story' | 'timeTrial' | 'endless'
+            daily: false,                  // true when the current endless run is the daily challenge
+            lastEarnedStars: 0,            // stars from the last completed story level (for the screen)
             activeVehicle: null,           // populated from VEHICLES on start
             timeRemaining: 0,              // for time trial
             timeElapsed: 0,                // for story best-time tracking
@@ -3977,10 +4032,10 @@
         // ============= OBSTACLES =============
         function createObstacle(z, forcedX) {
             const level = CONFIG.levels[state.currentLevel];
-            const type = Math.random() > 0.35 ? 'rock' : 'hole';
+            const type = rand() > 0.35 ? 'rock' : 'hole';
 
             let mesh;
-            const x = (forcedX !== undefined) ? forcedX : (Math.random() - 0.5) * 14;
+            const x = (forcedX !== undefined) ? forcedX : (rand() - 0.5) * 14;
             
             if (type === 'rock') {
                 const rockSize = 0.7 + Math.random() * 1.0;
@@ -4031,7 +4086,7 @@
         
         // ============= FUEL CANS =============
         function createFuelCan(z) {
-            const x = (Math.random() - 0.5) * 12;
+            const x = (rand() - 0.5) * 12;
             const group = new THREE.Group();
             
             const canGeom = new THREE.BoxGeometry(0.4, 0.6, 0.25);
@@ -4068,7 +4123,7 @@
         // ============= POWER-UPS =============
         function createPowerup(z, type) {
             const group = new THREE.Group();
-            const x = (Math.random() - 0.5) * 12;
+            const x = (rand() - 0.5) * 12;
 
             let baseColor, glowColor, icon;
             if (type === 'boost') { baseColor = 0xffcc00; glowColor = 0xffee44; }
@@ -4109,7 +4164,7 @@
         const obstaclePool = [], fuelCanPool = [], powerupPool = [];
 
         function reposition(obj, z, forcedX) {
-            const x = (forcedX !== undefined) ? forcedX : (Math.random() - 0.5) * 14;
+            const x = (forcedX !== undefined) ? forcedX : (rand() - 0.5) * 14;
             const h = getTerrainHeight(x, z);
             obj.position.set(x, h + (obj.userData.yOffset || 0.4), z);
             obj.visible = true;
@@ -4671,6 +4726,10 @@
             // has no goal marker, so no flattening. Matches goalZ used when placing the goal.
             state.goalFlattenZ = (state.mode === 'endless') ? null : (level.distance + 25);
 
+            // Daily challenge: seed the spawn-layout RNG from today's date (same obstacle
+            // stream for everyone, reset each attempt). All other modes use Math.random.
+            _spawnRng = state.daily ? mulberry32(hashStr(todaySeedString())) : null;
+
             scene.fog = new THREE.Fog(level.fogColor, level.fogNear, level.fogFar);
 
             // Gradient sky dome + image-based lighting (sets scene.background/environment)
@@ -4758,9 +4817,11 @@
             // (no impossible full-width crossings between two close rows).
             let lastObstacleX = 0;
             const maxStep = 6;   // max horizontal shift allowed between consecutive obstacles
+            // Spawn decisions go through rand() so the daily challenge's prespawn layout is
+            // seeded too (rand() === Math.random in every other mode).
             for (let z = 50; z < obstacleEnd; z += 18) {
-                if (Math.random() < level.obstacleFrequency) {
-                    let x = (Math.random() - 0.5) * 14;
+                if (rand() < level.obstacleFrequency) {
+                    let x = (rand() - 0.5) * 14;
                     x = Math.max(lastObstacleX - maxStep, Math.min(lastObstacleX + maxStep, x));
                     x = Math.max(-7, Math.min(7, x));
                     lastObstacleX = x;
@@ -4771,7 +4832,7 @@
             }
 
             for (let z = 80; z < fuelEnd; z += 50) {
-                if (Math.random() < level.fuelCanFrequency) {
+                if (rand() < level.fuelCanFrequency) {
                     const fuelCan = createFuelCan(z);
                     fuelCans.push(fuelCan);
                     scene.add(fuelCan);
@@ -4781,8 +4842,8 @@
             // Power-ups
             const powerupTypes = ['boost', 'fuel', 'shield'];
             for (let z = 120; z < powerupEnd; z += 80) {
-                if (Math.random() < (level.powerupFrequency || 0.06)) {
-                    const type = powerupTypes[Math.floor(Math.random() * powerupTypes.length)];
+                if (rand() < (level.powerupFrequency || 0.06)) {
+                    const type = powerupTypes[Math.floor(rand() * powerupTypes.length)];
                     const p = createPowerup(z, type);
                     powerups.push(p);
                     scene.add(p);
@@ -4933,7 +4994,9 @@
             vehicle.rotation.set(0, 0, 0);
 
             // Mode-specific level name
-            if (state.mode === 'endless') {
+            if (state.daily) {
+                levelName.textContent = '📅 التحدي اليومي';
+            } else if (state.mode === 'endless') {
                 levelName.textContent = '♾ تحدّي لا نهائي';
             } else if (state.mode === 'timeTrial') {
                 levelName.textContent = '⏱ ' + level.name;
@@ -5403,8 +5466,12 @@
             if (hpBar) hpBar.classList.toggle('critical', hpPct <= 25 && hpPct > 0);
 
             if (state.mode === 'endless') {
-                const best = SaveSystem.data.endless.bestDistance || 0;
-                distanceText.textContent = `📏 ${Math.floor(state.distance)} م | أفضل: ${best}`;
+                let best = SaveSystem.data.endless.bestDistance || 0;
+                if (state.daily) {
+                    const d = SaveSystem.data.daily;
+                    best = (d && d.date === todaySeedString()) ? (d.best || 0) : 0;
+                }
+                distanceText.textContent = `📏 ${Math.floor(state.distance)} م | أفضل${state.daily ? ' اليوم' : ''}: ${best}`;
             } else {
                 const level = CONFIG.levels[state.currentLevel];
                 const remaining = Math.max(0, Math.floor(level.distance - state.distance));
@@ -5526,10 +5593,16 @@
             }
         }
         
+        function starString(n) {
+            n = Math.max(0, Math.min(3, n || 0));
+            return '★'.repeat(n) + '☆'.repeat(3 - n);
+        }
         function showLevelCompleteScreen() {
             const level = CONFIG.levels[state.currentLevel];
             completeTitle.textContent = '🎉 أحسنت!';
-            completeSubtitle.textContent = `وصلت إلى ${level.targetName}!`;
+            const stars = state.lastEarnedStars || 1;
+            completeSubtitle.innerHTML = `وصلت إلى ${level.targetName}!` +
+                `<br><span style="font-size:1.8em;color:#ffd700;letter-spacing:4px;">${starString(stars)}</span>`;
             levelCompleteScreen.style.display = 'flex';
         }
         
@@ -5539,7 +5612,8 @@
                 const best = SaveSystem.data.timeTrial.bestTimes[state.currentLevel];
                 winBestScore.textContent = best ? `🏆 أفضل زمن: ${best.toFixed(2)} ث` : '';
             } else if (state.mode === 'story') {
-                winMessage.innerHTML = `وصلت للمخيم الصحراوي بسلام!<br>أنت ناجٍ حقيقي!`;
+                winMessage.innerHTML = `وصلت للمخيم الصحراوي بسلام!<br>أنت ناجٍ حقيقي!` +
+                    `<br><span style="font-size:1.6em;color:#ffd700;letter-spacing:4px;">${starString(state.lastEarnedStars || 1)}</span>`;
                 winBestScore.textContent = '';
             } else {
                 winMessage.innerHTML = 'وصلت بسلام!';
@@ -5640,9 +5714,11 @@
                 // of a 60Hz screen, making the endless run (and its leaderboard) unfair.
                 // At the reference 60fps (delta≈1/60) the factor is 1.0 → identical balance.
                 const spawnScale = delta * 60;
-                if (Math.random() < (0.04 + Math.min(0.08, state.distance / 30000)) * spawnScale) {
-                    const z = vehicle.position.z + 200 + Math.random() * 100;
-                    let x = (Math.random() - 0.5) * 14;
+                // Spawn LAYOUT randomness goes through rand() so the daily challenge is
+                // deterministic (seeded); every other mode leaves rand() === Math.random.
+                if (rand() < (0.04 + Math.min(0.08, state.distance / 30000)) * spawnScale) {
+                    const z = vehicle.position.z + 200 + rand() * 100;
+                    let x = (rand() - 0.5) * 14;
                     x = Math.max(state.endlessLastObstacleX - 6, Math.min(state.endlessLastObstacleX + 6, x));
                     x = Math.max(-7, Math.min(7, x));
                     state.endlessLastObstacleX = x;
@@ -5650,16 +5726,16 @@
                     obstacles.push(obs);
                     scene.add(obs);
                 }
-                if (Math.random() < 0.02 * spawnScale) {
-                    const z = vehicle.position.z + 200 + Math.random() * 100;
+                if (rand() < 0.02 * spawnScale) {
+                    const z = vehicle.position.z + 200 + rand() * 100;
                     const fc = acquireFuelCan(z);
                     fuelCans.push(fc);
                     scene.add(fc);
                 }
-                if (Math.random() < 0.012 * spawnScale) {
-                    const z = vehicle.position.z + 200 + Math.random() * 100;
+                if (rand() < 0.012 * spawnScale) {
+                    const z = vehicle.position.z + 200 + rand() * 100;
                     const types = ['boost', 'fuel', 'shield'];
-                    const p = acquirePowerup(z, types[Math.floor(Math.random() * 3)]);
+                    const p = acquirePowerup(z, types[Math.floor(rand() * 3)]);
                     powerups.push(p);
                     scene.add(p);
                 }
@@ -5937,6 +6013,12 @@
                     unlockAchievement('no_damage');
                 }
                 if (lvl === 0) unlockAchievement('first_level');
+                // Star rating (1–3): finish + clean run + par time. Keep the best ever earned.
+                const earned = computeStars(state.damageTakenThisLevel, time, starParSeconds(CONFIG.levels[lvl].distance));
+                state.lastEarnedStars = earned;
+                if (earned > (SaveSystem.data.campaign.stars[lvl] || 0)) {
+                    SaveSystem.data.campaign.stars[lvl] = earned;
+                }
                 SaveSystem.save();
             } else if (state.mode === 'timeTrial') {
                 const prev = SaveSystem.data.timeTrial.bestTimes[lvl];
@@ -5975,6 +6057,13 @@
                     SaveSystem.data.endless.bestDistance = dist;
                 }
                 SaveSystem.data.endless.runsCompleted++;
+                // Daily challenge: track today's best separately, resetting when the day rolls.
+                if (state.daily) {
+                    const today = todaySeedString();
+                    const d = SaveSystem.data.daily;
+                    if (d.date !== today) { d.date = today; d.best = 0; }
+                    if (dist > d.best) d.best = dist;
+                }
                 SaveSystem.save();
                 if (dist >= 1000) unlockAchievement('endless_1k');
                 if (dist >= 3000) unlockAchievement('endless_3k');
@@ -6036,7 +6125,9 @@
             state.isPaused = false;
             state.cameraRotating = false;
 
-            state.mode = state.pendingMode;
+            // The daily challenge plays as endless but with a date-seeded spawn stream.
+            state.daily = (state.pendingMode === 'daily');
+            state.mode = state.daily ? 'endless' : state.pendingMode;
             state.currentLevel = state.pendingLevel;
             rebuildVehicle(state.pendingVehicleId);
 
@@ -6260,9 +6351,14 @@
                 const bestTimes = state.pendingMode === 'timeTrial' ? SaveSystem.data.timeTrial.bestTimes : SaveSystem.data.campaign.bestTimes;
                 const bestTime = bestTimes[i];
                 const timeStr = bestTime ? `أفضل: ${bestTime.toFixed(1)}ث` : '-';
+                // Star rating shown for story mode (not time-trial).
+                const starN = SaveSystem.data.campaign.stars[i] || 0;
+                const starRow = (!locked && state.pendingMode === 'story')
+                    ? `<div style="color:#ffd700;font-size:0.85rem;letter-spacing:2px;">${starString(starN)}</div>` : '';
                 card.innerHTML = `
                     <div class="selection-icon">${locked ? '🔒' : (i+1)}</div>
                     <div class="selection-name" style="font-size:0.85rem;">${lvl.name.split('-').slice(1).join('-').trim() || lvl.name}</div>
+                    ${starRow}
                     <div class="selection-desc">${timeStr}</div>
                 `;
                 if (!locked) {
