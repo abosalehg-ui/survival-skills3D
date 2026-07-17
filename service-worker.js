@@ -1,5 +1,5 @@
 /* Service Worker for "النجاة في الصحراء" PWA */
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 const STATIC_CACHE = `desert-survival-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `desert-survival-runtime-${CACHE_VERSION}`;
 
@@ -68,8 +68,15 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
-          const copy = res.clone();
-          caches.open(STATIC_CACHE).then((c) => c.put('./index.html', copy));
+          // Only refresh the app-shell cache from a navigation that IS the app shell
+          // (site root or an index.html path). Writing an arbitrary in-scope page
+          // (e.g. /docs/…) over ./index.html would make the next offline launch serve
+          // that page as the game until the user comes back online.
+          const path = url.pathname;
+          if (res.ok && (path === '/' || path.endsWith('/') || path.endsWith('/index.html'))) {
+            const copy = res.clone();
+            caches.open(STATIC_CACHE).then((c) => c.put('./index.html', copy));
+          }
           return res;
         })
         .catch(() => caches.match('./index.html'))

@@ -813,7 +813,7 @@
     <div id="touchHint">👆 اسحب يميناً ويساراً للتحكم</div>
     
     <!-- Fuel Notification -->
-    <div id="fuelNotification" role="status" aria-live="polite">⛽ +10% وقود!</div>
+    <div id="fuelNotification" role="status" aria-live="polite">⛽ +10 وقود!</div>
     
     <!-- Mirage Overlay -->
     <div id="mirageOverlay"></div>
@@ -928,10 +928,10 @@
             <ul class="tutorial-list">
                 <li>📱 <b>الجوال</b>: اسحب الشاشة يميناً ويساراً للتحكم</li>
                 <li>⌨️ <b>الكيبورد</b>: أسهم/WASD للتوجيه، Esc/P للإيقاف</li>
-                <li>⛽ التقط <b>علب الوقود الخضراء</b> (+10% وقود، +5 صحة)</li>
+                <li>⛽ التقط <b>علب الوقود الخضراء</b> (+10 وقود، +5 صحة)</li>
                 <li>⚡ <b>تعزيز السرعة</b> (أصفر): سرعة 1.5× لمدة 5 ثوان</li>
                 <li>🛡️ <b>الدرع</b> (سماوي): يحميك من الاصطدام التالي</li>
-                <li>⛽⛽ <b>مضاعف الوقود</b> (أزرق): العلبة التالية +20%</li>
+                <li>⛽⛽ <b>مضاعف الوقود</b> (أزرق): العلبة التالية +20 وقود</li>
                 <li>🪨 تجنّب <b>الصخور والحُفر</b> — تنقص الصحة والوقود</li>
                 <li>🌪 <b>العواصف الرملية</b>: رؤية محدودة وتوجيه أصعب</li>
                 <li>❤️ إذا نفدت <b>الصحة</b> أو <b>الوقود</b> — انتهت اللعبة</li>
@@ -958,6 +958,9 @@
         "imports": {
             "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
             "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        },
+        "integrity": {
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js": "sha384-61S/Nu32S3E5+n+KpCOTb2eRYps6fVKm+9Gz1QBvSePFthb46f063Aa/qe/lykFZ"
         }
     }
     </script>
@@ -1367,6 +1370,10 @@
             
             startEngine() {
                 if (!this.initialized) return;
+                // Browsers suspend the AudioContext when the tab is backgrounded (the
+                // visibilitychange auto-pause triggers this). Resume it here so sound
+                // comes back on continue instead of staying silent until a reload.
+                if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
                 this.engineGain.gain.setTargetAtTime(0.15, this.ctx.currentTime, 0.5);
                 this.windGain.gain.setTargetAtTime(0.08, this.ctx.currentTime, 0.5);
             }
@@ -1524,7 +1531,6 @@
             cameraRotating: false,
             cameraRotationStart: 0,
             cameraRotationType: null,
-            showNextButton: false,
 
             // New: mode + vehicle stats
             mode: 'story',                 // 'story' | 'timeTrial' | 'endless'
@@ -4641,6 +4647,9 @@
                 const moonMat = new THREE.MeshBasicMaterial({ color: 0xffffee });
                 const moon = new THREE.Mesh(moonGeom, moonMat);
                 moon.position.set(100, 120, 300);
+                // Followed in gameLoop with this forward offset so the moon stays ahead
+                // in the sky instead of being left behind mid-level (levels are 900m+).
+                moon.userData.followZ = 300;
                 stars.push(moon);
                 scene.add(moon);
                 
@@ -4694,7 +4703,6 @@
             state.trackIndex = 0;
             state.lastCollisionTime = 0;
             state.cameraRotating = false;
-            state.showNextButton = false;
 
             // Reset run-specific tracking
             state.timeElapsed = 0;
@@ -4768,12 +4776,16 @@
         }
         
         // ============= INPUT HANDLING =============
+        // Sandstorms make the wheel vaguer. This factor is shared by ALL input paths
+        // (swipe, keyboard, on-screen buttons) so the penalty is consistent — it used
+        // to apply to swipe only, leaving keyboard/button players unaffected by storms.
+        function stormSteerFactor() { return state.sandstormActive ? 0.7 : 1.0; }
+
         function getEffectiveSensitivity() {
             const baseSens = CONFIG.vehicle.steeringSensitivity;
             const userMul = SaveSystem.data ? SaveSystem.data.settings.sensitivity : 1.0;
             const vehMul = state.activeVehicle ? state.activeVehicle.stats.steeringSensitivity : 1.0;
-            const stormMul = state.sandstormActive ? 0.7 : 1.0;
-            return baseSens * userMul * vehMul * stormMul;
+            return baseSens * userMul * vehMul * stormSteerFactor();
         }
 
         function setupControls() {
@@ -4797,8 +4809,11 @@
                                         Math.min(CONFIG.vehicle.maxSteerAngle, state.targetSteering));
             }, { passive: false });
 
-            document.addEventListener('touchend', () => {
-                state.targetSteering = 0;
+            document.addEventListener('touchend', (e) => {
+                // Only recentre when the LAST finger lifts. Previously any touchend
+                // (lifting a second finger, or releasing the pause tap) zeroed steering
+                // and cancelled an in-progress swipe or steer-button hold.
+                if (e.touches.length === 0) state.targetSteering = 0;
             });
 
             // Track held keys per direction so releasing one key doesn't cancel the
@@ -4809,7 +4824,7 @@
             const isRightKey = (k) => k === 'ArrowRight' || k === 'd' || k === 'D';
             const applyKeySteering = () => {
                 if (steerKeys.left === steerKeys.right) state.targetSteering = 0;
-                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle;
+                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle * stormSteerFactor();
             };
 
             document.addEventListener('keydown', (e) => {
@@ -4845,7 +4860,7 @@
                     const press = (e) => {
                         e.preventDefault();
                         if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
-                        state.targetSteering = dir * CONFIG.vehicle.maxSteerAngle;
+                        state.targetSteering = dir * CONFIG.vehicle.maxSteerAngle * stormSteerFactor();
                         btn.classList.add('pressed');
                     };
                     const release = (e) => {
@@ -4959,7 +4974,7 @@
                     state.fuelDoubler = false;
                     audio.playFuelPickup();
 
-                    fuelNotification.textContent = `⛽ +${baseAmt}% وقود!`;
+                    fuelNotification.textContent = `⛽ +${baseAmt} وقود!`;
                     fuelNotification.style.display = 'block';
                     clearTimeout(fuelNotifTimer);
                     fuelNotifTimer = setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
@@ -5306,7 +5321,12 @@
                 // Difficulty scaling: spawn more obstacles ahead. Like story mode,
                 // each obstacle's x is kept within dodging reach of the previous one
                 // so runtime spawning never builds an impassable wall.
-                if (Math.random() < 0.04 + Math.min(0.08, state.distance / 30000)) {
+                // Spawn CHANCES are scaled by delta*60 so the density is per-second, not
+                // per-frame: a 120Hz screen used to spawn ~2x the obstacles/fuel/powerups
+                // of a 60Hz screen, making the endless run (and its leaderboard) unfair.
+                // At the reference 60fps (delta≈1/60) the factor is 1.0 → identical balance.
+                const spawnScale = delta * 60;
+                if (Math.random() < (0.04 + Math.min(0.08, state.distance / 30000)) * spawnScale) {
                     const z = vehicle.position.z + 200 + Math.random() * 100;
                     let x = (Math.random() - 0.5) * 14;
                     x = Math.max(state.endlessLastObstacleX - 6, Math.min(state.endlessLastObstacleX + 6, x));
@@ -5316,13 +5336,13 @@
                     obstacles.push(obs);
                     scene.add(obs);
                 }
-                if (Math.random() < 0.02) {
+                if (Math.random() < 0.02 * spawnScale) {
                     const z = vehicle.position.z + 200 + Math.random() * 100;
                     const fc = acquireFuelCan(z);
                     fuelCans.push(fc);
                     scene.add(fc);
                 }
-                if (Math.random() < 0.012) {
+                if (Math.random() < 0.012 * spawnScale) {
                     const z = vehicle.position.z + 200 + Math.random() * 100;
                     const types = ['boost', 'fuel', 'shield'];
                     const p = acquirePowerup(z, types[Math.floor(Math.random() * 3)]);
@@ -5464,6 +5484,12 @@
             clouds.forEach(c => {
                 c.position.z = vehicle.position.z;
             });
+            // Star field (built around the origin) + moon follow the car too, else the
+            // night sky empties out and the car drives past the moon mid-level. Each
+            // object keeps its spawn-time forward offset (0 for the field, 300 for moon).
+            stars.forEach(s => {
+                s.position.z = vehicle.position.z + (s.userData.followZ || 0);
+            });
             
             updateDustParticles(delta);
             updateCargo(delta);
@@ -5511,9 +5537,13 @@
 
             updateHUD();
 
-            // Win condition
+            // Win condition. Return right after so the fuel/HP-zero check below can't
+            // overwrite a win with a game-over in the SAME frame — arriving on the last
+            // drop of fuel (or HP) must count as a win, not a defeat.
             if (state.mode !== 'endless' && state.distance >= level.distance - 1) {
                 completeLevel();
+                renderFrame(delta);
+                return;
             }
 
             if (state.fuel <= 0 || state.hp <= 0) {
@@ -5535,6 +5565,12 @@
             // Save best times + unlock achievements
             const lvl = state.currentLevel;
             const time = state.timeElapsed;
+
+            // Completing a full-storm level (story level 4) counts for the storm-survivor
+            // achievement, which was previously only reachable in endless mode.
+            if (CONFIG.levels[lvl] && CONFIG.levels[lvl].weather === 'sandstorm') {
+                unlockAchievement('storm_survivor');
+            }
             if (state.mode === 'story') {
                 const prev = SaveSystem.data.campaign.bestTimes[lvl];
                 if (!prev || time < prev) SaveSystem.data.campaign.bestTimes[lvl] = time;

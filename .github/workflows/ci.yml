@@ -1,0 +1,36 @@
+name: CI
+
+# Minimal quality gate for a single-file HTML game with no build step.
+# Every push / PR: extract the <script type="module"> from index.html, syntax-check
+# it with `node --check`, and run the pure-logic tests. One broken edit to the single
+# file otherwise breaks the whole game silently on GitHub Pages.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Extract the module script from index.html
+        # `node --check index.html` does NOT work (it's an HTML file). Pull out just the
+        # module <script> body, then syntax-check that.
+        run: |
+          awk '/<script type="module">/{f=1;next} /<\/script>/{if(f){f=0}} f' index.html > /tmp/module.mjs
+          test -s /tmp/module.mjs || { echo "::error::extracted module is empty — did the <script type=\"module\"> markers change?"; exit 1; }
+
+      - name: Syntax-check the game module
+        run: node --check /tmp/module.mjs
+
+      - name: Syntax-check the service worker
+        run: node --check service-worker.js
+
+      - name: Run logic tests
+        run: node tests/logic.test.mjs
