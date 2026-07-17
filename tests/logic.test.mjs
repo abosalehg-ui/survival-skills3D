@@ -64,10 +64,10 @@ console.log('logic.test.mjs');
 // the guardrail for any future terrain edit (see the "car sinking" incident).
 test('getTerrainSlope matches the numeric gradient of getTerrainHeight', () => {
     const levels = [
-        { duneHeight: 1.2 },                    // morning
-        { duneHeight: 2.5, narrowPath: true },  // mountain pass (steepest + narrow road)
-        { duneHeight: 0.7 },                    // rocky flats
-        { duneHeight: 1.5 },
+        { duneHeight: 1.2 },                                   // morning (phase 0)
+        { duneHeight: 2.5, narrowPath: true, terrainPhase: 3.4 }, // mountain pass + seeded phase
+        { duneHeight: 0.7, terrainPhase: 1.7 },                // rocky flats + seeded phase
+        { duneHeight: 1.5, terrainPhase: 5.1 },
     ];
     const eps = 1e-4;
     const tol = 1e-3;

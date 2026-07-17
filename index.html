@@ -1186,6 +1186,11 @@
             }
         };
 
+        // Per-level terrain phase seed so each story level's dunes/hills look distinct
+        // instead of the same wave pattern. Level 0 stays 0 so the endless/daily terrain
+        // (which always runs on level index 0) is stable and reproducible.
+        CONFIG.levels.forEach((lvl, i) => { lvl.terrainPhase = i * 1.7; });
+
         // ============= VEHICLE STATS =============
         const VEHICLES = [
             {
@@ -1410,7 +1415,8 @@
                     
                     this.setupEngine();
                     this.setupWind();
-                    
+                    this.setupMusic();
+
                     this.initialized = true;
                 } catch (e) {
                     console.log('Audio not available');
@@ -1458,7 +1464,45 @@
                 this.windGain.connect(this.masterGain);
                 this.windSource.start();
             }
-            
+
+            // Gentle ambient pad — a low, filtered drone on an open desert-ish chord. No
+            // external audio; starts/stops with the run and rides the master volume.
+            setupMusic() {
+                try {
+                    this.musicGain = this.ctx.createGain();
+                    this.musicGain.gain.value = 0;
+                    const lp = this.ctx.createBiquadFilter();
+                    lp.type = 'lowpass';
+                    lp.frequency.value = 520;
+                    this.musicGain.connect(lp);
+                    lp.connect(this.masterGain);
+                    const notes = [110, 164.81, 220];   // A2, E3, A3 — sparse open fifth/octave
+                    this.musicOscs = notes.map((f, i) => {
+                        const o = this.ctx.createOscillator();
+                        o.type = i % 2 ? 'sine' : 'triangle';
+                        o.frequency.value = f;
+                        o.detune.value = (i - 1) * 4;   // slight spread for warmth
+                        const g = this.ctx.createGain();
+                        g.gain.value = 0.32 / notes.length;
+                        o.connect(g);
+                        g.connect(this.musicGain);
+                        o.start();
+                        return o;
+                    });
+                } catch (e) { this.musicGain = null; }
+            }
+
+            startMusic() {
+                if (!this.initialized || !this.musicGain) return;
+                if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+                this.musicGain.gain.setTargetAtTime(0.06, this.ctx.currentTime, 1.8);
+            }
+
+            stopMusic() {
+                if (!this.initialized || !this.musicGain) return;
+                this.musicGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.8);
+            }
+
             startEngine() {
                 if (!this.initialized) return;
                 // Browsers suspend the AudioContext when the tab is backgrounded (the
@@ -1692,6 +1736,8 @@
         let idleFrameToggle = false; // half-rate rendering while in menus/pause
         // Shared uniforms for vertex-shader animation (palm sway, etc.)
         const fxUniforms = { uTime: { value: 0 } };
+        // Scratch color reused for the sandstorm fog tint (avoids per-frame allocation).
+        let _stormColor = null;
 
         const TERRAIN_CHUNK_SIZE = 50;
         const TERRAIN_RESOLUTION = 40;
@@ -3885,13 +3931,17 @@
         function getTerrainHeight(x, z) {
             const level = CONFIG.levels[state.currentLevel];
             const dune = level.duneHeight;
+            // Per-level phase seed so the wave pattern differs between levels instead of
+            // repeating. It's a constant phase added inside every wave, so the analytic
+            // gradient below keeps the exact same form (d/dz sin(kz+P) = k cos(kz+P)).
+            const P = level.terrainPhase || 0;
 
             // Lateral dunes (vary mostly across the track). These get flattened on the
             // road so the player isn't walled in left/right.
             let lateral = 0;
-            lateral += Math.sin(x * 0.06 + z * 0.025) * dune;
-            lateral += Math.cos(x * 0.04 + z * 0.04) * dune * 0.5;
-            lateral += Math.sin(x * 0.12 + z * 0.06) * dune * 0.25;
+            lateral += Math.sin(x * 0.06 + z * 0.025 + P) * dune;
+            lateral += Math.cos(x * 0.04 + z * 0.04 + P) * dune * 0.5;
+            lateral += Math.sin(x * 0.12 + z * 0.06 + P) * dune * 0.25;
 
             const roadWidth = level.narrowPath ? 6 : 10;
             const roadFactor = Math.exp(-(x * x) / (roadWidth * roadWidth));
@@ -3901,9 +3951,9 @@
             // road, so the car repeatedly climbs and descends real crests/dips instead of
             // gliding on a flat strip. Mixed wavelengths give long swells + shorter rolls.
             let hills = 0;
-            hills += Math.cos(z * 0.05 - 0.4) * dune * 0.6;    // long swells (~125u)
-            hills += Math.sin(z * 0.11 + 1.3) * dune * 0.85;   // main rolling hills (~57u)
-            hills += Math.sin(z * 0.21 + 0.6) * dune * 0.4;    // shorter undulations (~30u)
+            hills += Math.cos(z * 0.05 - 0.4 + P) * dune * 0.6;    // long swells (~125u)
+            hills += Math.sin(z * 0.11 + 1.3 + P) * dune * 0.85;   // main rolling hills (~57u)
+            hills += Math.sin(z * 0.21 + 0.6 + P) * dune * 0.4;    // shorter undulations (~30u)
 
             return (lateral + hills) * goalFlatten(z).g;
         }
@@ -3917,10 +3967,11 @@
         function getTerrainSlope(x, z) {
             const level = CONFIG.levels[state.currentLevel];
             const dune = level.duneHeight;
+            const P = level.terrainPhase || 0;   // same per-level phase as getTerrainHeight
 
-            const a1 = x * 0.06 + z * 0.025;
-            const a2 = x * 0.04 + z * 0.04;
-            const a3 = x * 0.12 + z * 0.06;
+            const a1 = x * 0.06 + z * 0.025 + P;
+            const a2 = x * 0.04 + z * 0.04 + P;
+            const a3 = x * 0.12 + z * 0.06 + P;
             const lateral = Math.sin(a1) * dune + Math.cos(a2) * dune * 0.5 + Math.sin(a3) * dune * 0.25;
             const lx = Math.cos(a1) * 0.06 * dune - Math.sin(a2) * 0.04 * dune * 0.5 + Math.cos(a3) * 0.12 * dune * 0.25;
             const lz = Math.cos(a1) * 0.025 * dune - Math.sin(a2) * 0.04 * dune * 0.5 + Math.cos(a3) * 0.06 * dune * 0.25;
@@ -3932,16 +3983,16 @@
 
             // Height (before goal-flatten) and its raw partials — the same base the
             // getTerrainHeight() above returns pre-flatten.
-            const hills = Math.cos(z * 0.05 - 0.4) * dune * 0.6
-                        + Math.sin(z * 0.11 + 1.3) * dune * 0.85
-                        + Math.sin(z * 0.21 + 0.6) * dune * 0.4;
+            const hills = Math.cos(z * 0.05 - 0.4 + P) * dune * 0.6
+                        + Math.sin(z * 0.11 + 1.3 + P) * dune * 0.85
+                        + Math.sin(z * 0.21 + 0.6 + P) * dune * 0.4;
             const base = lateral * damp + hills;
             // d/dx [lateral * damp] = lx*damp + lateral * 0.7 * roadFactor * 2x/w2
             const dxBase = lx * damp + lateral * 1.4 * roadFactor * x / w2;
             const dzBase = lz * damp
-                - Math.sin(z * 0.05 - 0.4) * 0.05 * dune * 0.6
-                + Math.cos(z * 0.11 + 1.3) * 0.11 * dune * 0.85
-                + Math.cos(z * 0.21 + 0.6) * 0.21 * dune * 0.4;
+                - Math.sin(z * 0.05 - 0.4 + P) * 0.05 * dune * 0.6
+                + Math.cos(z * 0.11 + 1.3 + P) * 0.11 * dune * 0.85
+                + Math.cos(z * 0.21 + 0.6 + P) * 0.21 * dune * 0.4;
 
             // Product rule for H = base * g(z): ∂x = dxBase*g, ∂z = dzBase*g + base*g'.
             const { g, gz } = goalFlatten(z);
@@ -4069,16 +4120,29 @@
                 mesh.userData = { type: 'rock', radius: rockSize + 0.3, yOffset: rockSize * 0.3 };
             } else {
                 const holeSize = 1.0 + Math.random() * 0.6;
-                const geom = new THREE.CircleGeometry(holeSize, 16);
-                const mat = new THREE.MeshStandardMaterial({
-                    color: level.timeOfDay === 'night' ? 0x0a0a15 : 0x3a2a1a,
-                    roughness: 1
-                });
-                mesh = new THREE.Mesh(geom, mat);
-                mesh.rotation.x = -Math.PI / 2;
                 const terrainHeight = getTerrainHeight(x, z);
-                mesh.position.set(x, terrainHeight + 0.02, z);
-                mesh.userData = { type: 'hole', radius: holeSize, yOffset: 0.02 };
+                // A pit can't be carved out of the solid ground mesh, so fake depth: a dark
+                // floor recessed slightly, a mid dark ring, and a raised lip around the edge
+                // — the concentric shading reads as an opening in the sand.
+                const group = new THREE.Group();
+                const dark = level.timeOfDay === 'night' ? 0x07070f : 0x2a1c10;
+                const floor = new THREE.Mesh(new THREE.CircleGeometry(holeSize, 20),
+                    new THREE.MeshBasicMaterial({ color: dark }));
+                floor.rotation.x = -Math.PI / 2;
+                floor.position.y = -0.12;   // recessed a touch below the rim
+                group.add(floor);
+                const midRing = new THREE.Mesh(new THREE.RingGeometry(holeSize * 0.62, holeSize, 20),
+                    new THREE.MeshStandardMaterial({ color: level.timeOfDay === 'night' ? 0x14141e : 0x4a3320, roughness: 1 }));
+                midRing.rotation.x = -Math.PI / 2;
+                midRing.position.y = -0.03;
+                group.add(midRing);
+                const lip = new THREE.Mesh(new THREE.TorusGeometry(holeSize * 0.98, 0.09, 8, 20),
+                    new THREE.MeshStandardMaterial({ color: level.timeOfDay === 'night' ? 0x2a2a38 : 0x6a5236, roughness: 1 }));
+                lip.rotation.x = -Math.PI / 2;
+                group.add(lip);
+                mesh = group;
+                mesh.position.set(x, terrainHeight + 0.04, z);
+                mesh.userData = { type: 'hole', radius: holeSize, yOffset: 0.04 };
             }
             
             return mesh;
@@ -4591,6 +4655,30 @@
             return group;
         }
         
+        // ============= SUN DISC (day levels) =============
+        // A bright billboard disc + soft halo in the sky for daytime levels (night keeps
+        // its existing moon). Follows the car like the star field (userData.followZ) and is
+        // disposed with the `stars` array on level change. Guarded — cosmetic only.
+        function createSkyBody(level) {
+            try {
+                if (level.timeOfDay === 'night') return null;   // night already has a moon
+                const tint = { morning: 0xfff2c0, afternoon: 0xfff0d0, sunset: 0xff8844 }[level.timeOfDay] || 0xfff2c0;
+                const g = new THREE.Group();
+                const halo = new THREE.Mesh(new THREE.CircleGeometry(46, 32),
+                    new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.16, fog: false, depthWrite: false }));
+                const disc = new THREE.Mesh(new THREE.CircleGeometry(20, 40),
+                    new THREE.MeshBasicMaterial({ color: tint, transparent: true, opacity: 0.95, fog: false, depthWrite: false }));
+                g.add(halo); g.add(disc);
+                // A CircleGeometry faces +Z; the camera looks toward +Z, so a disc placed
+                // ahead reads as a flat sun without extra billboarding.
+                const lowSun = level.timeOfDay === 'sunset';
+                g.position.set(level.timeOfDay === 'afternoon' ? -130 : 130, lowSun ? 42 : 150, 320);
+                g.userData.followZ = 320;
+                g.renderOrder = -0.5;   // behind scene geometry, in front of the sky dome
+                return g;
+            } catch (e) { return null; }
+        }
+
         // ============= STARS =============
         function createStars() {
             const geometry = new THREE.BufferGeometry();
@@ -4922,7 +5010,12 @@
                     vehicle.frontLight.intensity = 0;
                 }
             }
-            
+
+            // Daytime sun disc (night keeps its moon above). Tracked in `stars` so it
+            // follows the car and is disposed on the next level change.
+            const skyBody = createSkyBody(level);
+            if (skyBody) { stars.push(skyBody); scene.add(skyBody); }
+
             dustParticles = createDustParticles();
             vehicle.add(dustParticles);
             dustParticles.position.set(0, 0.3, -2.5);
@@ -5903,6 +5996,20 @@
                 goalMarker.visible = (goalMarker.position.z - vehicle.position.z) < level.fogFar + 20;
             }
 
+            // Cinematic sandstorm: close the fog in and tint it dusty tan while a storm is
+            // active, easing back to the level's fog when it passes (camera shake is added
+            // in the camera block above). Purely visual — gameplay ranges are unchanged.
+            if (scene.fog) {
+                if (!_stormColor) _stormColor = new THREE.Color();
+                const blend = Math.min(1, delta * 1.5);
+                const targetFar = state.sandstormActive ? level.fogFar * 0.5 : level.fogFar;
+                const targetNear = state.sandstormActive ? level.fogNear * 0.6 : level.fogNear;
+                scene.fog.far += (targetFar - scene.fog.far) * blend;
+                scene.fog.near += (targetNear - scene.fog.near) * blend;
+                _stormColor.set(state.sandstormActive ? 0xB8956A : level.fogColor);
+                scene.fog.color.lerp(_stormColor, blend);
+            }
+
             updateDustParticles(delta);
             updateDebris(delta);
             updateCargo(delta);
@@ -6045,6 +6152,7 @@
         function gameOver(won, reason) {
             state.isPaused = true;
             audio.stopEngine();
+            audio.stopMusic();
             hud.style.display = 'none';
             pauseBtn.style.display = 'none';
             if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
@@ -6133,6 +6241,7 @@
 
             setupLevel();
             audio.startEngine();
+            audio.startMusic();
             clock.start();
 
             setTimeout(() => { touchHint.style.display = 'none'; }, 5000);
@@ -6184,6 +6293,7 @@
             state.isPaused = false;
             state.cameraRotating = false;
             audio.stopEngine();
+            audio.stopMusic();
         }
 
         // ============= PAUSE =============
