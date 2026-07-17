@@ -120,21 +120,33 @@ test('getTerrainSlope matches numeric gradient with goal-flatten active', () => 
     assert.ok(checked > 500, `expected a dense sample grid, only checked ${checked}`);
 });
 
-test('goal-flatten pulls the ground to ~0 at the goal and leaves it untouched far away', () => {
+test('goal-flatten makes a truly FLAT plateau over the goal footprint, untouched far away', () => {
     const GOAL_Z = 800;
     const level = { duneHeight: 2.5 };  // steepest level — worst-case burial
     const flat = buildTerrain(level, GOAL_Z);
     const plain = buildTerrain(level, null);
-    // At the goal centre the surface must be near flat (was up to ±1.85*dune ≈ ±4.6u).
-    for (let x = -9; x <= 9; x += 3) {
-        assert.ok(Math.abs(flat.getTerrainHeight(x, GOAL_Z)) < 0.05,
-            `goal centre not flat at x=${x}: ${flat.getTerrainHeight(x, GOAL_Z).toFixed(3)}`);
+    // The WHOLE goal footprint (±20u in z, its parked props spread ±20 in x) must be
+    // dead flat at y=0 — not just the exact centre — or edge props float/sink.
+    for (let dz = -20; dz <= 20; dz += 4) {
+        for (let x = -20; x <= 20; x += 5) {
+            assert.ok(Math.abs(flat.getTerrainHeight(x, GOAL_Z + dz)) < 1e-9,
+                `goal footprint not flat at (${x}, ${GOAL_Z + dz}): ${flat.getTerrainHeight(x, GOAL_Z + dz)}`);
+        }
     }
     // Far from the goal the height is unchanged vs the un-flattened field.
     for (let z = 0; z <= 200; z += 25) {
         assert.ok(Math.abs(flat.getTerrainHeight(3, z) - plain.getTerrainHeight(3, z)) < 1e-9,
             `far-field height drifted at z=${z}`);
     }
+});
+
+test('capped hills keep the drivable dip depth shallow even on tall-dune levels', () => {
+    // On the mountain pass (dune 2.5) the raw hills reached ±1.85*2.5 ≈ ±4.6u, deep enough
+    // to hide the car. Capped at min(dune,1.0) the along-track roll stays within ~±1.85u.
+    const { getTerrainHeight } = buildTerrain({ duneHeight: 2.5 });
+    let maxAbs = 0;
+    for (let z = 0; z <= 400; z += 2) maxAbs = Math.max(maxAbs, Math.abs(getTerrainHeight(0, z)));
+    assert.ok(maxAbs < 2.3, `road-centre dips too deep: ${maxAbs.toFixed(2)}u (expected < 2.3)`);
 });
 
 // --- The road is flattened laterally so the player is never walled in ---------
