@@ -39,6 +39,8 @@ function slice(startAnchor, endAnchor) {
 const terrainSrc = slice('// @terrain-testable-start', '// @terrain-testable-end');
 // barColor sits just before the `const levelName = ...` DOM lookups.
 const barColorSrc = slice('function barColor', 'const levelName');
+const starsSrc = slice('// @stars-testable-start', '// @stars-testable-end');
+const rngSrc = slice('// @rng-testable-start', '// @rng-testable-end');
 
 // Build the terrain functions with a mock CONFIG/state (the only globals they read).
 // goalFlattenZ mirrors state.goalFlattenZ: null = no goal flattening (endless / default).
@@ -50,6 +52,8 @@ function buildTerrain(level, goalFlattenZ = null) {
     return factory(CONFIG, state);
 }
 const barColor = new Function(barColorSrc + '\n return barColor;')();
+const { computeStars, starParSeconds } = new Function(starsSrc + '\n return { computeStars, starParSeconds };')();
+const { mulberry32, hashStr } = new Function(rngSrc + '\n return { mulberry32, hashStr };')();
 
 console.log('logic.test.mjs');
 
@@ -60,10 +64,10 @@ console.log('logic.test.mjs');
 // the guardrail for any future terrain edit (see the "car sinking" incident).
 test('getTerrainSlope matches the numeric gradient of getTerrainHeight', () => {
     const levels = [
-        { duneHeight: 1.2 },                    // morning
-        { duneHeight: 2.5, narrowPath: true },  // mountain pass (steepest + narrow road)
-        { duneHeight: 0.7 },                    // rocky flats
-        { duneHeight: 1.5 },
+        { duneHeight: 1.2 },                                   // morning (phase 0)
+        { duneHeight: 2.5, narrowPath: true, terrainPhase: 3.4 }, // mountain pass + seeded phase
+        { duneHeight: 0.7, terrainPhase: 1.7 },                // rocky flats + seeded phase
+        { duneHeight: 1.5, terrainPhase: 5.1 },
     ];
     const eps = 1e-4;
     const tol = 1e-3;
@@ -155,6 +159,32 @@ test('barColor picks green > amber > red across its thresholds', () => {
     assert.match(barColor(26), /ffaa00/, '>25% should be amber');
     assert.match(barColor(25), /ff4444/, '25% should be red');
     assert.match(barColor(0), /ff4444/, '0% should be red');
+});
+
+// --- Star rating (story) -----------------------------------------------------
+test('computeStars: finish=1, clean run=+1, par time=+1, clamped to 1..3', () => {
+    const par = starParSeconds(800);                 // ~51s
+    assert.equal(computeStars(true, par + 10, par), 1, 'damaged + slow = 1 star');
+    assert.equal(computeStars(false, par + 10, par), 2, 'clean but slow = 2 stars');
+    assert.equal(computeStars(true, par - 5, par), 2, 'damaged but fast = 2 stars');
+    assert.equal(computeStars(false, par - 5, par), 3, 'clean + fast = 3 stars');
+    assert.ok(starParSeconds(800) > 0 && starParSeconds(1300) > starParSeconds(800), 'par scales with distance');
+});
+
+// --- Daily seeded RNG --------------------------------------------------------
+test('mulberry32 is deterministic per seed and same-day seeds match', () => {
+    const seed = hashStr('2026-7-17');
+    const a = mulberry32(seed), b = mulberry32(seed);
+    const seqA = [], seqB = [];
+    for (let i = 0; i < 20; i++) { seqA.push(a()); seqB.push(b()); }
+    assert.deepEqual(seqA, seqB, 'same seed → identical stream (fair daily for everyone)');
+    // Values are in [0,1) and not all identical (actually random-looking).
+    assert.ok(seqA.every(v => v >= 0 && v < 1), 'outputs are in [0,1)');
+    assert.ok(new Set(seqA).size > 15, 'stream has variety');
+    // Different days → different streams.
+    const c = mulberry32(hashStr('2026-7-18'));
+    const seqC = []; for (let i = 0; i < 20; i++) seqC.push(c());
+    assert.notDeepEqual(seqA, seqC, 'different day → different stream');
 });
 
 if (failures) {
