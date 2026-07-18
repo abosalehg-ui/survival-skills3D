@@ -5315,16 +5315,18 @@
         }
         
         // ============= INPUT HANDLING =============
-        // Sandstorms make the wheel vaguer. This factor is shared by ALL input paths
-        // (swipe, keyboard, on-screen buttons) so the penalty is consistent — it used
-        // to apply to swipe only, leaving keyboard/button players unaffected by storms.
+        // Sandstorms make the wheel vaguer. Applied CENTRALLY on the final steering value
+        // in gameLoop (not baked into targetSteering at each input source): baking it in
+        // per-source meant a storm that began while a key/button was already held — or
+        // that lifted mid-hold — kept the wrong factor until the next press. Scaling the
+        // live steering each frame keeps swipe, keyboard and on-screen buttons consistent.
         function stormSteerFactor() { return state.sandstormActive ? 0.7 : 1.0; }
 
         function getEffectiveSensitivity() {
             const baseSens = CONFIG.vehicle.steeringSensitivity;
             const userMul = SaveSystem.data ? SaveSystem.data.settings.sensitivity : 1.0;
             const vehMul = state.activeVehicle ? state.activeVehicle.stats.steeringSensitivity : 1.0;
-            return baseSens * userMul * vehMul * stormSteerFactor();
+            return baseSens * userMul * vehMul;
         }
 
         function setupControls() {
@@ -5363,7 +5365,7 @@
             const isRightKey = (k) => k === 'ArrowRight' || k === 'd' || k === 'D';
             const applyKeySteering = () => {
                 if (steerKeys.left === steerKeys.right) state.targetSteering = 0;
-                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle * stormSteerFactor();
+                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle;
             };
 
             // Gas / brake (throttle). Held keys set a target multiplier; releasing returns
@@ -5412,7 +5414,7 @@
                     const press = (e) => {
                         e.preventDefault();
                         if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
-                        state.targetSteering = dir * CONFIG.vehicle.maxSteerAngle * stormSteerFactor();
+                        state.targetSteering = dir * CONFIG.vehicle.maxSteerAngle;
                         btn.classList.add('pressed');
                     };
                     const release = (e) => {
@@ -5924,6 +5926,10 @@
             // delta so turning feels identical at 30fps and 144fps (no more 8-frame lag).
             const steerBlend = 1 - Math.pow(CONFIG.vehicle.steeringDamping, delta * 60);
             state.steering += (state.targetSteering - state.steering) * steerBlend;
+            // Storm vagueness applied to the LIVE steering (see stormSteerFactor): the car's
+            // movement, lean, wheel angle and engine pitch all use this reduced value, so a
+            // sandstorm starting/ending mid-hold takes effect immediately for every input.
+            const effSteering = state.steering * stormSteerFactor();
 
             // Vehicle stats + boost multiplier + throttle (gas/brake).
             const baseSpeed = state.activeVehicle ? state.activeVehicle.stats.topSpeed : CONFIG.vehicle.speed;
@@ -6055,7 +6061,7 @@
             vehicle.position.z += speed * delta;
             state.distance = vehicle.position.z;
 
-            vehicle.position.x += state.steering * speed * delta;
+            vehicle.position.x += effSteering * speed * delta;
             vehicle.position.x = Math.max(-25, Math.min(25, vehicle.position.x));
             
             const targetHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z) + CONFIG.vehicle.groundOffset;
@@ -6096,8 +6102,8 @@
             const terrainRoll = Math.atan2(leftHeight - rightHeight, 3);
 
             const damageBias = state.hp < state.maxHp * CONFIG.damage.tiltThreshold ? 0.08 : 0;
-            vehicle.rotation.z = -state.steering * CONFIG.vehicle.bodyTiltFactor + damageBias + terrainRoll * 0.5;
-            vehicle.rotation.y = state.steering * 0.3;
+            vehicle.rotation.z = -effSteering * CONFIG.vehicle.bodyTiltFactor + damageBias + terrainRoll * 0.5;
+            vehicle.rotation.y = effSteering * 0.3;
             vehicle.rotation.x = -terrainPitch * 1.1;
 
             if (vehicle.wheels) {
@@ -6106,7 +6112,7 @@
                     if (wheel.children[1]) wheel.children[1].rotation.x += speed * delta * 2;
                     // Front wheels (first two) visibly steer with the input, a touch more
                     // than the body yaw so the turn reads clearly.
-                    if (i < 2) wheel.rotation.y = state.steering * 0.6;
+                    if (i < 2) wheel.rotation.y = effSteering * 0.6;
                 });
             }
 
@@ -6225,7 +6231,7 @@
 
             checkCollisions();
 
-            audio.updateEngine(speed, state.steering);
+            audio.updateEngine(speed, effSteering);
 
             // Refresh effect badges on a fixed cadence so the boost countdown
             // ticks steadily (was Math.random() < 0.1 → jittery updates).
@@ -6361,6 +6367,21 @@
             }
         }
 
+        // ============= ENTER PLAY STATE (shared) =============
+        // The three ways into active gameplay — a fresh run (beginRun), a retry
+        // (restartGame) and advancing a level (goToNextLevel) — used to each open-code
+        // the same "show HUD + controls + start audio" ritual, and they had DRIFTED:
+        // only beginRun started the music, so the ambient pad went silent forever after
+        // the first game-over/next-level. Centralising it here fixes that and stops the
+        // three paths diverging again.
+        function enterPlayState() {
+            hud.style.display = 'flex';
+            pauseBtn.style.display = 'flex';
+            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
+            audio.startEngine();
+            audio.startMusic();
+        }
+
         // ============= GO TO NEXT LEVEL =============
         function goToNextLevel() {
             levelCompleteScreen.style.display = 'none';
@@ -6370,10 +6391,7 @@
             state.cameraRotating = false;
 
             setupLevel();
-            hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
-            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
-            audio.startEngine();
+            enterPlayState();
         }
 
         // ============= START GAME =============
@@ -6383,9 +6401,6 @@
             vehicleSelectScreen.style.display = 'none';
             levelSelectScreen.style.display = 'none';
             tutorialModal.style.display = 'none';
-            hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
-            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
             touchHint.style.display = 'block';
 
             audio.init();
@@ -6402,9 +6417,8 @@
             rebuildVehicle(state.pendingVehicleId);
 
             setupLevel();
-            audio.startEngine();
-            audio.startMusic();
             clock.start();
+            enterPlayState();
 
             setTimeout(() => { touchHint.style.display = 'none'; }, 5000);
         }
@@ -6427,16 +6441,18 @@
             clock.start();
 
             setupLevel();
-            hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
-            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
-            audio.startEngine();
+            enterPlayState();
         }
 
         // ============= "Play Again" from win screen =============
+        // The button reads "العب من البداية" (play from the beginning), so it should
+        // actually START a fresh run, not drop back to the main menu. Story restarts the
+        // whole campaign at level 1; any other mode replays the level just finished. Same
+        // vehicle/mode the player already picked — keep their momentum at the win moment.
         function playAgain() {
-            // Return to start menu
-            quitToMenu();
+            winScreen.style.display = 'none';
+            state.pendingLevel = (state.mode === 'story') ? 0 : state.currentLevel;
+            beginRun();
         }
 
         // ============= QUIT TO MENU =============
