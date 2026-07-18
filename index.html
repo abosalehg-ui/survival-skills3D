@@ -2188,10 +2188,17 @@
             if (pmremGenerator) {
                 try {
                     if (envRT) { envRT.dispose(); envRT = null; }
+                    // Dispose the throwaway geometry + cloned material once PMREM has baked
+                    // the env map — they were leaked on every level change (one clone + one
+                    // sphere geometry per level, never freed).
+                    const tmpGeo = new THREE.SphereGeometry(10, 16, 8);
+                    const tmpMat = mat.clone();
                     const tmp = new THREE.Scene();
-                    tmp.add(new THREE.Mesh(new THREE.SphereGeometry(10, 16, 8), mat.clone()));
+                    tmp.add(new THREE.Mesh(tmpGeo, tmpMat));
                     envRT = pmremGenerator.fromScene(tmp, 0, 0.1, 100);
                     scene.environment = envRT.texture;
+                    tmpGeo.dispose();
+                    tmpMat.dispose();
                 } catch (e) { /* IBL is optional */ }
             }
         }
@@ -4062,6 +4069,37 @@
             nrm.needsUpdate = true;
         }
 
+        // Memoized terrain materials (see the note at their use site in createTerrainChunk).
+        // Keyed by sandColor and flagged userData.shared so they survive chunk disposal and
+        // are reused by every chunk of every level that shares the colour.
+        const _terrainMats = {};
+        function terrainSurfaceMaterial(sandColor) {
+            const key = 'surf' + sandColor;
+            if (_terrainMats[key]) return _terrainMats[key];
+            const sandTex = TextureFactory.sand(sandColor);
+            const m = new THREE.MeshStandardMaterial({
+                color: 0xffffff,            // albedo already tinted to sandColor
+                map: sandTex.map,
+                normalMap: sandTex.normalMap,
+                normalScale: new THREE.Vector2(0.6, 0.6),
+                vertexColors: true,
+                roughness: 0.95,
+                metalness: 0,
+                flatShading: false          // smooth shading so the normal map reads
+            });
+            m.userData.shared = true;
+            _terrainMats[key] = m;
+            return m;
+        }
+        function terrainBaseMaterial(sandColor) {
+            const key = 'base' + sandColor;
+            if (_terrainMats[key]) return _terrainMats[key];
+            const m = new THREE.MeshStandardMaterial({ color: sandColor, roughness: 1 });
+            m.userData.shared = true;
+            _terrainMats[key] = m;
+            return m;
+        }
+
         function createTerrainChunk(zPosition, chunkIndex) {
             const level = CONFIG.levels[state.currentLevel];
             
@@ -4097,18 +4135,14 @@
                 sunset: 0x9a6a4a
             };
             const sandColor = level.sandColor || sandColors[level.timeOfDay] || 0xDEB887;
-            const sandTex = TextureFactory.sand(sandColor);
 
-            const material = new THREE.MeshStandardMaterial({
-                color: 0xffffff,            // albedo already tinted to sandColor
-                map: sandTex.map,
-                normalMap: sandTex.normalMap,
-                normalScale: new THREE.Vector2(0.6, 0.6),
-                vertexColors: true,
-                roughness: 0.95,
-                metalness: 0,
-                flatShading: false          // smooth shading so the normal map reads
-            });
+            // Surface + base materials are IDENTICAL across every chunk of a level (same
+            // sand colour/texture; per-chunk variation lives in the geometry's vertex
+            // colours, not the material). A level builds ~30 chunks, so allocating a fresh
+            // pair each time meant ~60 duplicate MeshStandardMaterials — GPU programs +
+            // memory for nothing. Memoize per sandColor (flagged userData.shared so
+            // disposeObject3D never frees them; the cache is tiny — a handful of colours).
+            const material = terrainSurfaceMaterial(sandColor);
 
             const mesh = new THREE.Mesh(geometry, material);
             mesh.rotation.x = -Math.PI / 2;
@@ -4125,8 +4159,7 @@
             // ever seen edge-on, filling the gap under the sand).
             const BASE_TOP_MARGIN = 0.12;
             const baseGeometry = new THREE.BoxGeometry(100, 8, TERRAIN_CHUNK_SIZE);
-            const baseMaterial = new THREE.MeshStandardMaterial({ color: sandColor, roughness: 1 });
-            const base = new THREE.Mesh(baseGeometry, baseMaterial);
+            const base = new THREE.Mesh(baseGeometry, terrainBaseMaterial(sandColor));
             base.position.set(0, -4 - BASE_TOP_MARGIN, zPosition);
 
             return { surface: mesh, base: base };
@@ -4539,24 +4572,26 @@
         }
 
         // ============= DECORATIONS =============
-        function createPalmTree(x, z) {
-            const group = new THREE.Group();
-            const level = CONFIG.levels[state.currentLevel];
-            
-            const trunkColor = level.timeOfDay === 'night' ? 0x2a1a10 : 0x4a3520;
-            const trunkGeom = new THREE.CylinderGeometry(0.15, 0.35, 5, 8);
+        // Palm trunk + frond materials, memoized per day/night variant. Every palm used to
+        // allocate its own leaf material WITH an onBeforeCompile hook — i.e. a fresh shader
+        // program compiled per tree (an oasis/camp has 10+). Sharing them (flagged
+        // userData.shared so disposeObject3D never frees them) compiles the sway shader once
+        // per variant and reuses it for every palm in the level. The leaves ride the shared
+        // fxUniforms.uTime, so the sway stays in sync.
+        const _palmMats = {};
+        function palmMaterials(level) {
+            const night = level.timeOfDay === 'night';
+            const key = night ? 'night' : 'day';
+            if (_palmMats[key]) return _palmMats[key];
+            const trunkColor = night ? 0x2a1a10 : 0x4a3520;
             const trunkMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: TextureFactory.bark(trunkColor).map,
                 roughness: 0.9
             });
-            const trunk = new THREE.Mesh(trunkGeom, trunkMat);
-            trunk.position.y = 2.5;
-            trunk.castShadow = true;
-            group.add(trunk);
-
+            trunkMat.userData.shared = true;
             const leafMat = new THREE.MeshStandardMaterial({
-                color: level.timeOfDay === 'night' ? 0x1a4a1a : 0x228B22,
+                color: night ? 0x1a4a1a : 0x228B22,
                 roughness: 0.8,
                 side: THREE.DoubleSide
             });
@@ -4568,6 +4603,22 @@
                     '#include <begin_vertex>\n transformed.x += sin(uTime * 1.6 + transformed.z * 0.5) * (position.y * 0.06);'
                 );
             };
+            leafMat.userData.shared = true;
+            _palmMats[key] = { trunkMat, leafMat };
+            return _palmMats[key];
+        }
+
+        function createPalmTree(x, z) {
+            const group = new THREE.Group();
+            const level = CONFIG.levels[state.currentLevel];
+            const { trunkMat, leafMat } = palmMaterials(level);
+
+            const trunkGeom = new THREE.CylinderGeometry(0.15, 0.35, 5, 8);
+            const trunk = new THREE.Mesh(trunkGeom, trunkMat);
+            trunk.position.y = 2.5;
+            trunk.castShadow = true;
+            group.add(trunk);
+
             for (let i = 0; i < 8; i++) {
                 const leafGeom = new THREE.PlaneGeometry(0.6, 2.5);
                 const leaf = new THREE.Mesh(leafGeom, leafMat);
@@ -4576,16 +4627,16 @@
                 leaf.rotation.x = -0.6;
                 group.add(leaf);
             }
-            
+
             const terrainHeight = getTerrainHeight(x, z);
             group.position.set(x, terrainHeight, z);
             return group;
         }
         
-        function createTent(x, z) {
+        function createTent(x, z, opts = {}) {
             const group = new THREE.Group();
             const level = CONFIG.levels[state.currentLevel];
-            
+
             const tentGeom = new THREE.ConeGeometry(2.5, 2.2, 4);
             const tentMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
@@ -4598,12 +4649,20 @@
             tent.rotation.y = Math.PI / 4;
             tent.castShadow = true;
             group.add(tent);
-            
+
             if (level.timeOfDay === 'night') {
-                const fireLight = new THREE.PointLight(0xff6600, 1.5, 12);
-                fireLight.position.set(3.5, 0.8, 0);
-                group.add(fireLight);
-                
+                // The emissive fire cone (MeshBasicMaterial is unlit) reads as fire by
+                // itself. The real PointLight is OPT-IN (opts.light): the roadside
+                // decoration tents are many and far off the track, and every dynamic light
+                // costs per-fragment in forward rendering — dozens of night campfires each
+                // adding a light tanked FPS for glow no one could see. Goal areas (camp)
+                // supply their own single main fire light instead.
+                if (opts.light) {
+                    const fireLight = new THREE.PointLight(0xff6600, 1.5, 12);
+                    fireLight.position.set(3.5, 0.8, 0);
+                    group.add(fireLight);
+                }
+
                 const fireGeom = new THREE.ConeGeometry(0.25, 0.8, 8);
                 const fireMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
                 const fire = new THREE.Mesh(fireGeom, fireMat);
@@ -5278,10 +5337,11 @@
             } else {
                 levelName.textContent = level.name;
             }
+            resetHUDCache();
             updateHUD();
             updateEffectBadges();
         }
-        
+
         // ============= GAME INITIALIZATION =============
         function initGame() {
             initThreeJS();
@@ -5488,6 +5548,19 @@
             }
         }
 
+        // Remove an object the player just interacted with (hit or picked up) from the scene
+        // and its live array, recycling it into the matching pool. In endless mode it gets
+        // re-acquired and repositioned ahead (allocation-free); in story/time-trial the pools
+        // are drained and DISPOSED at level teardown (setupLevel), so nothing leaks. The four
+        // interaction sites below previously did scene.remove + splice only — leaving each
+        // obstacle's uniquely-shaped geometry/materials for the GC to maybe reclaim, i.e.
+        // non-deterministic VRAM growth over a long run (worst on weak mobile GPUs).
+        function removeInteractive(obj, arr, i, pool) {
+            scene.remove(obj);
+            pool.push(obj);
+            arr.splice(i, 1);
+        }
+
         // ============= COLLISION DETECTION =============
         function checkCollisions() {
             const vehiclePos = vehicle.position;
@@ -5516,8 +5589,7 @@
                             state.shielded = false;
                             audio.playCrash();
                             updateEffectBadges();
-                            scene.remove(obstacle);
-                            obstacles.splice(i, 1);
+                            removeInteractive(obstacle, obstacles, i, obstaclePool);
                             state.lastCollisionTime = now;
                             return true;
                         }
@@ -5567,8 +5639,7 @@
                     }
 
                     vehicle.position.z -= 0.2;
-                    scene.remove(obstacle);
-                    obstacles.splice(i, 1);
+                    removeInteractive(obstacle, obstacles, i, obstaclePool);
                     return true;
                 }
             }
@@ -5595,8 +5666,7 @@
                     clearTimeout(fuelNotifTimer);
                     fuelNotifTimer = setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
 
-                    scene.remove(fuelCan);
-                    fuelCans.splice(i, 1);
+                    removeInteractive(fuelCan, fuelCans, i, fuelCanPool);
                     updateEffectBadges();
 
                     if (state.fuelCansCollected >= 5) {
@@ -5622,8 +5692,7 @@
                         state.shielded = true;
                     }
                     audio.playFuelPickup();
-                    scene.remove(p);
-                    powerups.splice(i, 1);
+                    removeInteractive(p, powerups, i, powerupPool);
                     updateEffectBadges();
                     unlockAchievement('collect_powerup');
                 }
@@ -5705,37 +5774,57 @@
         }
         
         // ============= HUD UPDATE =============
+        // Last-written HUD values so updateHUD (called every frame) only touches the DOM
+        // when something actually changed — writing width/background/textContent every
+        // frame forced a continuous style recalc on mobile for numbers that move ~once a
+        // second. Reset in setupLevel so the first frame of a new run always paints.
+        let _hudFuelR = -1, _hudHpR = -1, _hudDistTxt = '', _hudTimerTxt = '';
+        function resetHUDCache() { _hudFuelR = -1; _hudHpR = -1; _hudDistTxt = ''; _hudTimerTxt = ''; }
         function updateHUD() {
             const fuelPct = Math.max(0, (state.fuel / state.maxFuel) * 100);
-            fuelFill.style.width = `${fuelPct}%`;
-            fuelFill.style.background = barColor(fuelPct);
+            const fuelR = Math.round(fuelPct);
+            if (fuelR !== _hudFuelR) {
+                fuelFill.style.width = fuelR + '%';
+                fuelFill.style.background = barColor(fuelPct);
+                _hudFuelR = fuelR;
+            }
 
             const hpPct = Math.max(0, (state.hp / state.maxHp) * 100);
-            hpFill.style.width = `${hpPct}%`;
-            hpFill.style.background = barColor(hpPct);
-            // Flash the HP bar when death is imminent.
-            if (hpBar) hpBar.classList.toggle('critical', hpPct <= 25 && hpPct > 0);
+            const hpR = Math.round(hpPct);
+            if (hpR !== _hudHpR) {
+                hpFill.style.width = hpR + '%';
+                hpFill.style.background = barColor(hpPct);
+                // Flash the HP bar when death is imminent.
+                if (hpBar) hpBar.classList.toggle('critical', hpPct <= 25 && hpPct > 0);
+                _hudHpR = hpR;
+            }
 
+            let distTxt;
             if (state.mode === 'endless') {
                 let best = SaveSystem.data.endless.bestDistance || 0;
                 if (state.daily) {
                     const d = SaveSystem.data.daily;
                     best = (d && d.date === todaySeedString()) ? (d.best || 0) : 0;
                 }
-                distanceText.textContent = `📏 ${Math.floor(state.distance)} م | أفضل${state.daily ? ' اليوم' : ''}: ${best}`;
+                distTxt = `📏 ${Math.floor(state.distance)} م | أفضل${state.daily ? ' اليوم' : ''}: ${best}`;
             } else {
                 const level = CONFIG.levels[state.currentLevel];
                 const remaining = Math.max(0, Math.floor(level.distance - state.distance));
-                distanceText.textContent = `المتبقي: ${remaining} م`;
+                distTxt = `المتبقي: ${remaining} م`;
             }
+            if (distTxt !== _hudDistTxt) { distanceText.textContent = distTxt; _hudDistTxt = distTxt; }
 
             if (state.mode === 'timeTrial' && timerInfo.style.display !== 'none') {
                 const t = Math.max(0, state.timeRemaining);
                 const min = Math.floor(t / 60);
                 const sec = Math.floor(t % 60);
-                timerValue.textContent = `${min.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
-                if (t < 10) timerValue.classList.add('warning');
-                else timerValue.classList.remove('warning');
+                const timerTxt = `${min.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+                if (timerTxt !== _hudTimerTxt) {
+                    timerValue.textContent = timerTxt;
+                    if (t < 10) timerValue.classList.add('warning');
+                    else timerValue.classList.remove('warning');
+                    _hudTimerTxt = timerTxt;
+                }
             }
         }
         
