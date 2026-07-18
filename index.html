@@ -756,7 +756,7 @@
         </div>
         <div class="credits">
             <p>تطوير: عبدالكريم العبود | <a href="mailto:abo.saleh.g@gmail.com">abo.saleh.g@gmail.com</a></p>
-            <p>© 2024 [Survival Skills] - All Rights Reserved</p>
+            <p>© 2024–2026 النجاة في الصحراء — رخصة MIT</p>
         </div>
     </div>
     
@@ -1270,8 +1270,11 @@
             };
         }
         function todaySeedString() {
+            // UTC date so the "one seed for everyone today" is genuinely global — with local
+            // date, players in different time zones got different daily layouts (and rolled
+            // over at different moments). UTC makes the daily challenge identical worldwide.
             const d = new Date();
-            return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+            return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
         }
         // @rng-testable-end
 
@@ -1657,7 +1660,9 @@
             cameraRotationType: null,
 
             // New: mode + vehicle stats
-            mode: 'story',                 // 'story' | 'timeTrial' | 'endless'
+            mode: 'story',                 // 'story' | 'timeTrial' | 'endless' — the daily
+                                           // challenge runs as 'endless' with `daily` true and
+                                           // a date-seeded spawn stream (see beginRun/setupLevel)
             daily: false,                  // true when the current endless run is the daily challenge
             lastEarnedStars: 0,            // stars from the last completed story level (for the screen)
             activeVehicle: null,           // populated from VEHICLES on start
@@ -2473,7 +2478,7 @@
             inst.instanceMatrix.needsUpdate = true;
         }
         
-        // ============= TOYOTA LAND CRUISER 70 PICKUP =============
+        // ============= HEAVY-DUTY OFF-ROAD PICKUP (LC-70 style, neutral marque) =============
         function createVehicle() {
             const group = new THREE.Group();
             
@@ -2546,7 +2551,7 @@
                 group.add(bar);
             }
 
-            // Toyota emblem (chrome oval) above grille
+            // Generic chrome oval emblem above the grille (no real-world logo)
             const emblemMat = new THREE.MeshStandardMaterial({ color: chromeColor, metalness: 0.95, roughness: 0.2 });
             const emblem = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.025, 8, 18), emblemMat);
             emblem.scale.set(1.0, 0.65, 1.0);
@@ -2873,68 +2878,18 @@
             tailgate.castShadow = true;
             group.add(tailgate);
             
-            // === TOYOTA TEXT ON TAILGATE ===
-            // Letters laid out as "ATOYOT" along +X so when viewed from behind
-            // (camera at -Z looking toward +Z) they read correctly as "TOYOTA".
-            const letterMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5 });
-            const letterHeight = 0.12;
-            const letterDepth = 0.03;
-            const letterY = 1.18;
-            const letterZ = -2.55;
+            // === TAILGATE BADGE (neutral, no real-world marque) ===
+            // A generic brushed-chrome bar + a small model-code plate — a finished tailgate
+            // look without reproducing any real manufacturer's wordmark/logo (avoids a
+            // trademark issue on a publicly hosted game).
+            const badgeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.35, metalness: 0.7 });
+            const badgeBar = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.03, 0.03), badgeMat);
+            badgeBar.position.set(0, 1.20, -2.55);
+            group.add(badgeBar);
+            const badgePlate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.10, 0.02), badgeMat);
+            badgePlate.position.set(0.5, 1.05, -2.55);
+            group.add(badgePlate);
 
-            // A (leftmost in code = rightmost visually from behind)
-            const a1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
-            a1.position.set(-0.49, letterY, letterZ);
-            a1.rotation.z = 0.15;
-            group.add(a1);
-            const a2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
-            a2.position.set(-0.41, letterY, letterZ);
-            a2.rotation.z = -0.15;
-            group.add(a2);
-            const a3 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, letterDepth), letterMat);
-            a3.position.set(-0.45, letterY - 0.01, letterZ);
-            group.add(a3);
-
-            // T
-            const t1bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, letterDepth), letterMat);
-            t1bar.position.set(-0.27, letterY + 0.06, letterZ);
-            group.add(t1bar);
-            const t1stem = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
-            t1stem.position.set(-0.27, letterY, letterZ);
-            group.add(t1stem);
-
-            // O
-            const oGeom = new THREE.TorusGeometry(0.05, 0.015, 8, 18);
-            const o1 = new THREE.Mesh(oGeom, letterMat);
-            o1.position.set(-0.09, letterY, letterZ);
-            group.add(o1);
-
-            // Y
-            const y1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, letterDepth), letterMat);
-            y1.position.set(0.06, letterY + 0.04, letterZ);
-            y1.rotation.z = 0.4;
-            group.add(y1);
-            const y2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, letterDepth), letterMat);
-            y2.position.set(0.12, letterY + 0.04, letterZ);
-            y2.rotation.z = -0.4;
-            group.add(y2);
-            const y3 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.07, letterDepth), letterMat);
-            y3.position.set(0.09, letterY - 0.04, letterZ);
-            group.add(y3);
-
-            // O
-            const o2 = new THREE.Mesh(oGeom, letterMat);
-            o2.position.set(0.27, letterY, letterZ);
-            group.add(o2);
-
-            // T (rightmost in code = leftmost visually from behind)
-            const t2bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, letterDepth), letterMat);
-            t2bar.position.set(0.45, letterY + 0.06, letterZ);
-            group.add(t2bar);
-            const t2stem = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
-            t2stem.position.set(0.45, letterY, letterZ);
-            group.add(t2stem);
-            
             const bedFrontGeom = new THREE.BoxGeometry(1.9, 0.5, 0.08);
             const bedFront = new THREE.Mesh(bedFrontGeom, bedWallMat);
             bedFront.position.set(0, 1.15, -0.35);
