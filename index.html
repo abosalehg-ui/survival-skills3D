@@ -756,7 +756,7 @@
         </div>
         <div class="credits">
             <p>تطوير: عبدالكريم العبود | <a href="mailto:abo.saleh.g@gmail.com">abo.saleh.g@gmail.com</a></p>
-            <p>© 2024 [Survival Skills] - All Rights Reserved</p>
+            <p>© 2024–2026 النجاة في الصحراء — رخصة MIT</p>
         </div>
     </div>
     
@@ -1270,8 +1270,11 @@
             };
         }
         function todaySeedString() {
+            // UTC date so the "one seed for everyone today" is genuinely global — with local
+            // date, players in different time zones got different daily layouts (and rolled
+            // over at different moments). UTC makes the daily challenge identical worldwide.
             const d = new Date();
-            return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
+            return `${d.getUTCFullYear()}-${d.getUTCMonth() + 1}-${d.getUTCDate()}`;
         }
         // @rng-testable-end
 
@@ -1553,6 +1556,27 @@
                 });
             }
             
+            // Low-fuel warning: two short descending beeps. Fired once when fuel first
+            // drops below the warning threshold (see gameLoop) — the HP bar already flashes
+            // for low health, this gives fuel an equivalent, non-visual alert.
+            playLowFuel() {
+                if (!this.initialized) return;
+                [880, 660].forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    osc.type = 'square';
+                    osc.frequency.value = freq;
+                    const gain = this.ctx.createGain();
+                    const t0 = this.ctx.currentTime + i * 0.18;
+                    gain.gain.value = 0;
+                    gain.gain.setTargetAtTime(0.12, t0, 0.01);
+                    gain.gain.setTargetAtTime(0, t0 + 0.10, 0.05);
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(t0);
+                    osc.stop(t0 + 0.3);
+                });
+            }
+
             // Simple celebration sound - just a pleasant ding
             playCelebration() {
                 if (!this.initialized) return;
@@ -1636,7 +1660,9 @@
             cameraRotationType: null,
 
             // New: mode + vehicle stats
-            mode: 'story',                 // 'story' | 'timeTrial' | 'endless'
+            mode: 'story',                 // 'story' | 'timeTrial' | 'endless' — the daily
+                                           // challenge runs as 'endless' with `daily` true and
+                                           // a date-seeded spawn stream (see beginRun/setupLevel)
             daily: false,                  // true when the current endless run is the daily challenge
             lastEarnedStars: 0,            // stars from the last completed story level (for the screen)
             activeVehicle: null,           // populated from VEHICLES on start
@@ -1644,6 +1670,7 @@
             timeElapsed: 0,                // for story best-time tracking
             fuelCansCollected: 0,
             damageTakenThisLevel: false,
+            lowFuelWarned: false,          // one-shot latch for the low-fuel warning beep
 
             // Power-ups. Expiry times are in game-time seconds (compared against
             // timeElapsed, which only advances during play) so pausing freezes
@@ -1851,6 +1878,19 @@
 
             window.addEventListener('resize', onResize);
 
+            // WebGL context loss recovery. The OS can reclaim the GPU context (common on
+            // mobile after the app is backgrounded, or under VRAM pressure), which otherwise
+            // leaves a permanently black canvas. Catch it, freeze the loop, and offer a
+            // one-tap reload — a clean rebuild is far simpler and more reliable than trying
+            // to recreate every GPU resource in place for a single-file game.
+            const glCanvas = renderer.domElement;
+            glCanvas.addEventListener('webglcontextlost', (e) => {
+                e.preventDefault();          // required for a restore to ever be possible
+                state.isPlaying = false;     // stop the loop from touching a dead context
+                try { audio.stopEngine(); audio.stopMusic(); } catch (err) {}
+                showContextLostOverlay();
+            }, false);
+
             // Progressive enhancement: load post-processing addons asynchronously.
             // If the CDN modules fail (e.g. first-run offline), the game still runs
             // with a plain render path.
@@ -1858,6 +1898,31 @@
             // Optional real camel model — see setupCamelModel(). Purely additive; the
             // procedural camel already works and keeps being used until/unless this resolves.
             setupCamelModel();
+        }
+
+        // Full-screen "graphics stopped — tap to restart" overlay shown when the WebGL
+        // context is lost (see initThreeJS). Reuses one element; tapping reloads for a clean
+        // rebuild. RTL Arabic to match the game.
+        function showContextLostOverlay() {
+            try {
+                let el = document.getElementById('contextLostOverlay');
+                if (!el) {
+                    el = document.createElement('div');
+                    el.id = 'contextLostOverlay';
+                    el.setAttribute('role', 'alert');
+                    el.style.cssText = 'position:fixed;inset:0;z-index:3000;display:flex;flex-direction:column;' +
+                        'justify-content:center;align-items:center;gap:18px;text-align:center;padding:24px;' +
+                        'background:linear-gradient(180deg,#1a0f00,#3d2810);color:#fff;font-family:inherit;';
+                    el.innerHTML = '<div style="font-size:2.2rem;">⚠️ توقّف العرض مؤقتاً</div>' +
+                        '<div style="font-size:1.05rem;color:#d4a574;max-width:480px;line-height:1.7;">' +
+                        'فقد المتصفح سياق الرسوميات (يحدث أحياناً بعد ترك اللعبة في الخلفية). ' +
+                        'اضغط لإعادة التشغيل — تقدّمك محفوظ.</div>' +
+                        '<button class="start-btn" style="pointer-events:auto;">🔄 إعادة التشغيل</button>';
+                    el.addEventListener('click', () => location.reload());
+                    document.body.appendChild(el);
+                }
+                el.style.display = 'flex';
+            } catch (err) { try { location.reload(); } catch (e2) {} }
         }
 
         async function setupPostProcessing() {
@@ -2188,10 +2253,17 @@
             if (pmremGenerator) {
                 try {
                     if (envRT) { envRT.dispose(); envRT = null; }
+                    // Dispose the throwaway geometry + cloned material once PMREM has baked
+                    // the env map — they were leaked on every level change (one clone + one
+                    // sphere geometry per level, never freed).
+                    const tmpGeo = new THREE.SphereGeometry(10, 16, 8);
+                    const tmpMat = mat.clone();
                     const tmp = new THREE.Scene();
-                    tmp.add(new THREE.Mesh(new THREE.SphereGeometry(10, 16, 8), mat.clone()));
+                    tmp.add(new THREE.Mesh(tmpGeo, tmpMat));
                     envRT = pmremGenerator.fromScene(tmp, 0, 0.1, 100);
                     scene.environment = envRT.texture;
+                    tmpGeo.dispose();
+                    tmpMat.dispose();
                 } catch (e) { /* IBL is optional */ }
             }
         }
@@ -2406,7 +2478,7 @@
             inst.instanceMatrix.needsUpdate = true;
         }
         
-        // ============= TOYOTA LAND CRUISER 70 PICKUP =============
+        // ============= HEAVY-DUTY OFF-ROAD PICKUP (LC-70 style, neutral marque) =============
         function createVehicle() {
             const group = new THREE.Group();
             
@@ -2479,7 +2551,7 @@
                 group.add(bar);
             }
 
-            // Toyota emblem (chrome oval) above grille
+            // Generic chrome oval emblem above the grille (no real-world logo)
             const emblemMat = new THREE.MeshStandardMaterial({ color: chromeColor, metalness: 0.95, roughness: 0.2 });
             const emblem = new THREE.Mesh(new THREE.TorusGeometry(0.08, 0.025, 8, 18), emblemMat);
             emblem.scale.set(1.0, 0.65, 1.0);
@@ -2806,68 +2878,18 @@
             tailgate.castShadow = true;
             group.add(tailgate);
             
-            // === TOYOTA TEXT ON TAILGATE ===
-            // Letters laid out as "ATOYOT" along +X so when viewed from behind
-            // (camera at -Z looking toward +Z) they read correctly as "TOYOTA".
-            const letterMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.5 });
-            const letterHeight = 0.12;
-            const letterDepth = 0.03;
-            const letterY = 1.18;
-            const letterZ = -2.55;
+            // === TAILGATE BADGE (neutral, no real-world marque) ===
+            // A generic brushed-chrome bar + a small model-code plate — a finished tailgate
+            // look without reproducing any real manufacturer's wordmark/logo (avoids a
+            // trademark issue on a publicly hosted game).
+            const badgeMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.35, metalness: 0.7 });
+            const badgeBar = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.03, 0.03), badgeMat);
+            badgeBar.position.set(0, 1.20, -2.55);
+            group.add(badgeBar);
+            const badgePlate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.10, 0.02), badgeMat);
+            badgePlate.position.set(0.5, 1.05, -2.55);
+            group.add(badgePlate);
 
-            // A (leftmost in code = rightmost visually from behind)
-            const a1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
-            a1.position.set(-0.49, letterY, letterZ);
-            a1.rotation.z = 0.15;
-            group.add(a1);
-            const a2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
-            a2.position.set(-0.41, letterY, letterZ);
-            a2.rotation.z = -0.15;
-            group.add(a2);
-            const a3 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, letterDepth), letterMat);
-            a3.position.set(-0.45, letterY - 0.01, letterZ);
-            group.add(a3);
-
-            // T
-            const t1bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, letterDepth), letterMat);
-            t1bar.position.set(-0.27, letterY + 0.06, letterZ);
-            group.add(t1bar);
-            const t1stem = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
-            t1stem.position.set(-0.27, letterY, letterZ);
-            group.add(t1stem);
-
-            // O
-            const oGeom = new THREE.TorusGeometry(0.05, 0.015, 8, 18);
-            const o1 = new THREE.Mesh(oGeom, letterMat);
-            o1.position.set(-0.09, letterY, letterZ);
-            group.add(o1);
-
-            // Y
-            const y1 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, letterDepth), letterMat);
-            y1.position.set(0.06, letterY + 0.04, letterZ);
-            y1.rotation.z = 0.4;
-            group.add(y1);
-            const y2 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.06, letterDepth), letterMat);
-            y2.position.set(0.12, letterY + 0.04, letterZ);
-            y2.rotation.z = -0.4;
-            group.add(y2);
-            const y3 = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.07, letterDepth), letterMat);
-            y3.position.set(0.09, letterY - 0.04, letterZ);
-            group.add(y3);
-
-            // O
-            const o2 = new THREE.Mesh(oGeom, letterMat);
-            o2.position.set(0.27, letterY, letterZ);
-            group.add(o2);
-
-            // T (rightmost in code = leftmost visually from behind)
-            const t2bar = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.02, letterDepth), letterMat);
-            t2bar.position.set(0.45, letterY + 0.06, letterZ);
-            group.add(t2bar);
-            const t2stem = new THREE.Mesh(new THREE.BoxGeometry(0.02, letterHeight, letterDepth), letterMat);
-            t2stem.position.set(0.45, letterY, letterZ);
-            group.add(t2stem);
-            
             const bedFrontGeom = new THREE.BoxGeometry(1.9, 0.5, 0.08);
             const bedFront = new THREE.Mesh(bedFrontGeom, bedWallMat);
             bedFront.position.set(0, 1.15, -0.35);
@@ -4062,6 +4084,37 @@
             nrm.needsUpdate = true;
         }
 
+        // Memoized terrain materials (see the note at their use site in createTerrainChunk).
+        // Keyed by sandColor and flagged userData.shared so they survive chunk disposal and
+        // are reused by every chunk of every level that shares the colour.
+        const _terrainMats = {};
+        function terrainSurfaceMaterial(sandColor) {
+            const key = 'surf' + sandColor;
+            if (_terrainMats[key]) return _terrainMats[key];
+            const sandTex = TextureFactory.sand(sandColor);
+            const m = new THREE.MeshStandardMaterial({
+                color: 0xffffff,            // albedo already tinted to sandColor
+                map: sandTex.map,
+                normalMap: sandTex.normalMap,
+                normalScale: new THREE.Vector2(0.6, 0.6),
+                vertexColors: true,
+                roughness: 0.95,
+                metalness: 0,
+                flatShading: false          // smooth shading so the normal map reads
+            });
+            m.userData.shared = true;
+            _terrainMats[key] = m;
+            return m;
+        }
+        function terrainBaseMaterial(sandColor) {
+            const key = 'base' + sandColor;
+            if (_terrainMats[key]) return _terrainMats[key];
+            const m = new THREE.MeshStandardMaterial({ color: sandColor, roughness: 1 });
+            m.userData.shared = true;
+            _terrainMats[key] = m;
+            return m;
+        }
+
         function createTerrainChunk(zPosition, chunkIndex) {
             const level = CONFIG.levels[state.currentLevel];
             
@@ -4097,18 +4150,14 @@
                 sunset: 0x9a6a4a
             };
             const sandColor = level.sandColor || sandColors[level.timeOfDay] || 0xDEB887;
-            const sandTex = TextureFactory.sand(sandColor);
 
-            const material = new THREE.MeshStandardMaterial({
-                color: 0xffffff,            // albedo already tinted to sandColor
-                map: sandTex.map,
-                normalMap: sandTex.normalMap,
-                normalScale: new THREE.Vector2(0.6, 0.6),
-                vertexColors: true,
-                roughness: 0.95,
-                metalness: 0,
-                flatShading: false          // smooth shading so the normal map reads
-            });
+            // Surface + base materials are IDENTICAL across every chunk of a level (same
+            // sand colour/texture; per-chunk variation lives in the geometry's vertex
+            // colours, not the material). A level builds ~30 chunks, so allocating a fresh
+            // pair each time meant ~60 duplicate MeshStandardMaterials — GPU programs +
+            // memory for nothing. Memoize per sandColor (flagged userData.shared so
+            // disposeObject3D never frees them; the cache is tiny — a handful of colours).
+            const material = terrainSurfaceMaterial(sandColor);
 
             const mesh = new THREE.Mesh(geometry, material);
             mesh.rotation.x = -Math.PI / 2;
@@ -4125,8 +4174,7 @@
             // ever seen edge-on, filling the gap under the sand).
             const BASE_TOP_MARGIN = 0.12;
             const baseGeometry = new THREE.BoxGeometry(100, 8, TERRAIN_CHUNK_SIZE);
-            const baseMaterial = new THREE.MeshStandardMaterial({ color: sandColor, roughness: 1 });
-            const base = new THREE.Mesh(baseGeometry, baseMaterial);
+            const base = new THREE.Mesh(baseGeometry, terrainBaseMaterial(sandColor));
             base.position.set(0, -4 - BASE_TOP_MARGIN, zPosition);
 
             return { surface: mesh, base: base };
@@ -4343,13 +4391,19 @@
             const group = new THREE.Group();
             const x = (rand() - 0.5) * 12;
 
-            let baseColor, glowColor, icon;
+            let baseColor, glowColor;
             if (type === 'boost') { baseColor = 0xffcc00; glowColor = 0xffee44; }
             else if (type === 'fuel') { baseColor = 0x33aaff; glowColor = 0x66ccff; }
             else if (type === 'shield') { baseColor = 0x00ddee; glowColor = 0x66f0ff; }
 
-            // Floating diamond shape
-            const geom = new THREE.OctahedronGeometry(0.45, 0);
+            // Distinct SHAPE per power-up (not colour alone) so red/green-blind players can
+            // still tell them apart: a pointed cone = speed/boost, a round icosahedron =
+            // shield dome, an upright cylinder = fuel canister. All ~0.45u so the collision
+            // radius and float behaviour are unchanged.
+            let geom;
+            if (type === 'boost') geom = new THREE.ConeGeometry(0.4, 0.9, 5);
+            else if (type === 'shield') geom = new THREE.IcosahedronGeometry(0.48, 0);
+            else geom = new THREE.CylinderGeometry(0.34, 0.34, 0.7, 10);
             const mat = new THREE.MeshStandardMaterial({
                 color: baseColor,
                 emissive: baseColor,
@@ -4539,24 +4593,26 @@
         }
 
         // ============= DECORATIONS =============
-        function createPalmTree(x, z) {
-            const group = new THREE.Group();
-            const level = CONFIG.levels[state.currentLevel];
-            
-            const trunkColor = level.timeOfDay === 'night' ? 0x2a1a10 : 0x4a3520;
-            const trunkGeom = new THREE.CylinderGeometry(0.15, 0.35, 5, 8);
+        // Palm trunk + frond materials, memoized per day/night variant. Every palm used to
+        // allocate its own leaf material WITH an onBeforeCompile hook — i.e. a fresh shader
+        // program compiled per tree (an oasis/camp has 10+). Sharing them (flagged
+        // userData.shared so disposeObject3D never frees them) compiles the sway shader once
+        // per variant and reuses it for every palm in the level. The leaves ride the shared
+        // fxUniforms.uTime, so the sway stays in sync.
+        const _palmMats = {};
+        function palmMaterials(level) {
+            const night = level.timeOfDay === 'night';
+            const key = night ? 'night' : 'day';
+            if (_palmMats[key]) return _palmMats[key];
+            const trunkColor = night ? 0x2a1a10 : 0x4a3520;
             const trunkMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
                 map: TextureFactory.bark(trunkColor).map,
                 roughness: 0.9
             });
-            const trunk = new THREE.Mesh(trunkGeom, trunkMat);
-            trunk.position.y = 2.5;
-            trunk.castShadow = true;
-            group.add(trunk);
-
+            trunkMat.userData.shared = true;
             const leafMat = new THREE.MeshStandardMaterial({
-                color: level.timeOfDay === 'night' ? 0x1a4a1a : 0x228B22,
+                color: night ? 0x1a4a1a : 0x228B22,
                 roughness: 0.8,
                 side: THREE.DoubleSide
             });
@@ -4568,6 +4624,22 @@
                     '#include <begin_vertex>\n transformed.x += sin(uTime * 1.6 + transformed.z * 0.5) * (position.y * 0.06);'
                 );
             };
+            leafMat.userData.shared = true;
+            _palmMats[key] = { trunkMat, leafMat };
+            return _palmMats[key];
+        }
+
+        function createPalmTree(x, z) {
+            const group = new THREE.Group();
+            const level = CONFIG.levels[state.currentLevel];
+            const { trunkMat, leafMat } = palmMaterials(level);
+
+            const trunkGeom = new THREE.CylinderGeometry(0.15, 0.35, 5, 8);
+            const trunk = new THREE.Mesh(trunkGeom, trunkMat);
+            trunk.position.y = 2.5;
+            trunk.castShadow = true;
+            group.add(trunk);
+
             for (let i = 0; i < 8; i++) {
                 const leafGeom = new THREE.PlaneGeometry(0.6, 2.5);
                 const leaf = new THREE.Mesh(leafGeom, leafMat);
@@ -4576,16 +4648,16 @@
                 leaf.rotation.x = -0.6;
                 group.add(leaf);
             }
-            
+
             const terrainHeight = getTerrainHeight(x, z);
             group.position.set(x, terrainHeight, z);
             return group;
         }
         
-        function createTent(x, z) {
+        function createTent(x, z, opts = {}) {
             const group = new THREE.Group();
             const level = CONFIG.levels[state.currentLevel];
-            
+
             const tentGeom = new THREE.ConeGeometry(2.5, 2.2, 4);
             const tentMat = new THREE.MeshStandardMaterial({
                 color: 0xffffff,
@@ -4598,12 +4670,20 @@
             tent.rotation.y = Math.PI / 4;
             tent.castShadow = true;
             group.add(tent);
-            
+
             if (level.timeOfDay === 'night') {
-                const fireLight = new THREE.PointLight(0xff6600, 1.5, 12);
-                fireLight.position.set(3.5, 0.8, 0);
-                group.add(fireLight);
-                
+                // The emissive fire cone (MeshBasicMaterial is unlit) reads as fire by
+                // itself. The real PointLight is OPT-IN (opts.light): the roadside
+                // decoration tents are many and far off the track, and every dynamic light
+                // costs per-fragment in forward rendering — dozens of night campfires each
+                // adding a light tanked FPS for glow no one could see. Goal areas (camp)
+                // supply their own single main fire light instead.
+                if (opts.light) {
+                    const fireLight = new THREE.PointLight(0xff6600, 1.5, 12);
+                    fireLight.position.set(3.5, 0.8, 0);
+                    group.add(fireLight);
+                }
+
                 const fireGeom = new THREE.ConeGeometry(0.25, 0.8, 8);
                 const fireMat = new THREE.MeshBasicMaterial({ color: 0xff4400 });
                 const fire = new THREE.Mesh(fireGeom, fireMat);
@@ -5241,6 +5321,7 @@
             state.timeElapsed = 0;
             state.fuelCansCollected = 0;
             state.damageTakenThisLevel = false;
+            state.lowFuelWarned = false;
             state.boostUntil = 0;
             state.fuelDoubler = false;
             state.shielded = false;
@@ -5278,10 +5359,11 @@
             } else {
                 levelName.textContent = level.name;
             }
+            resetHUDCache();
             updateHUD();
             updateEffectBadges();
         }
-        
+
         // ============= GAME INITIALIZATION =============
         function initGame() {
             initThreeJS();
@@ -5315,16 +5397,18 @@
         }
         
         // ============= INPUT HANDLING =============
-        // Sandstorms make the wheel vaguer. This factor is shared by ALL input paths
-        // (swipe, keyboard, on-screen buttons) so the penalty is consistent — it used
-        // to apply to swipe only, leaving keyboard/button players unaffected by storms.
+        // Sandstorms make the wheel vaguer. Applied CENTRALLY on the final steering value
+        // in gameLoop (not baked into targetSteering at each input source): baking it in
+        // per-source meant a storm that began while a key/button was already held — or
+        // that lifted mid-hold — kept the wrong factor until the next press. Scaling the
+        // live steering each frame keeps swipe, keyboard and on-screen buttons consistent.
         function stormSteerFactor() { return state.sandstormActive ? 0.7 : 1.0; }
 
         function getEffectiveSensitivity() {
             const baseSens = CONFIG.vehicle.steeringSensitivity;
             const userMul = SaveSystem.data ? SaveSystem.data.settings.sensitivity : 1.0;
             const vehMul = state.activeVehicle ? state.activeVehicle.stats.steeringSensitivity : 1.0;
-            return baseSens * userMul * vehMul * stormSteerFactor();
+            return baseSens * userMul * vehMul;
         }
 
         function setupControls() {
@@ -5363,7 +5447,7 @@
             const isRightKey = (k) => k === 'ArrowRight' || k === 'd' || k === 'D';
             const applyKeySteering = () => {
                 if (steerKeys.left === steerKeys.right) state.targetSteering = 0;
-                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle * stormSteerFactor();
+                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle;
             };
 
             // Gas / brake (throttle). Held keys set a target multiplier; releasing returns
@@ -5412,7 +5496,7 @@
                     const press = (e) => {
                         e.preventDefault();
                         if (!state.isPlaying || state.cameraRotating || state.isPaused) return;
-                        state.targetSteering = dir * CONFIG.vehicle.maxSteerAngle * stormSteerFactor();
+                        state.targetSteering = dir * CONFIG.vehicle.maxSteerAngle;
                         btn.classList.add('pressed');
                     };
                     const release = (e) => {
@@ -5429,7 +5513,42 @@
             }
 
         }
-        
+
+        // ============= GAMEPAD (optional) =============
+        // Polled once per active frame (see gameLoop). Reuses the same targetSteering/throttle
+        // channels as swipe/keyboard/buttons, so it stays consistent with the storm penalty
+        // and everything downstream. Only writes when a stick/button is actually engaged, so a
+        // connected-but-idle pad never fights keyboard/touch input. Fully guarded — a missing
+        // Gamepad API or odd controller mapping can never break the loop.
+        function pollGamepad() {
+            try {
+                if (!navigator.getGamepads) return;
+                const pads = navigator.getGamepads();
+                let gp = null;
+                for (const p of pads) { if (p && p.connected) { gp = p; break; } }
+                if (!gp) return;
+
+                // Steering: left-stick X (axis 0) or the d-pad (buttons 14/15). Sign matches
+                // the keyboard convention (left → +targetSteering); a small dead-zone kills
+                // stick drift, and the remaining range is rescaled to the full steer angle.
+                const dead = 0.18;
+                let ax = gp.axes[0] || 0;
+                if (gp.buttons[14] && gp.buttons[14].pressed) ax = -1;
+                else if (gp.buttons[15] && gp.buttons[15].pressed) ax = 1;
+                if (Math.abs(ax) > dead) {
+                    const mag = Math.min(1, (Math.abs(ax) - dead) / (1 - dead));
+                    state.targetSteering = -Math.sign(ax) * mag * CONFIG.vehicle.maxSteerAngle;
+                }
+
+                // Throttle: RT / A = gas, LT / B = brake (leave at cruise when neither is held
+                // so keyboard/touch throttle is not overridden by an idle pad).
+                const gas = (gp.buttons[7] && gp.buttons[7].pressed) || (gp.buttons[0] && gp.buttons[0].pressed);
+                const brake = (gp.buttons[6] && gp.buttons[6].pressed) || (gp.buttons[1] && gp.buttons[1].pressed);
+                if (gas && !brake) state.throttle = 1.15;
+                else if (brake && !gas) state.throttle = 0.6;
+            } catch (e) { /* gamepad is optional */ }
+        }
+
         // ============= IMPACT DEBRIS (pooled, cosmetic) =============
         // A small ring-buffer pool of shard meshes reused for every impact — allocation-free
         // after warm-up. Shared geometry + two materials (rock/hole). Not tracked by the
@@ -5486,6 +5605,19 @@
             }
         }
 
+        // Remove an object the player just interacted with (hit or picked up) from the scene
+        // and its live array, recycling it into the matching pool. In endless mode it gets
+        // re-acquired and repositioned ahead (allocation-free); in story/time-trial the pools
+        // are drained and DISPOSED at level teardown (setupLevel), so nothing leaks. The four
+        // interaction sites below previously did scene.remove + splice only — leaving each
+        // obstacle's uniquely-shaped geometry/materials for the GC to maybe reclaim, i.e.
+        // non-deterministic VRAM growth over a long run (worst on weak mobile GPUs).
+        function removeInteractive(obj, arr, i, pool) {
+            scene.remove(obj);
+            pool.push(obj);
+            arr.splice(i, 1);
+        }
+
         // ============= COLLISION DETECTION =============
         function checkCollisions() {
             const vehiclePos = vehicle.position;
@@ -5514,8 +5646,7 @@
                             state.shielded = false;
                             audio.playCrash();
                             updateEffectBadges();
-                            scene.remove(obstacle);
-                            obstacles.splice(i, 1);
+                            removeInteractive(obstacle, obstacles, i, obstaclePool);
                             state.lastCollisionTime = now;
                             return true;
                         }
@@ -5565,8 +5696,7 @@
                     }
 
                     vehicle.position.z -= 0.2;
-                    scene.remove(obstacle);
-                    obstacles.splice(i, 1);
+                    removeInteractive(obstacle, obstacles, i, obstaclePool);
                     return true;
                 }
             }
@@ -5593,8 +5723,7 @@
                     clearTimeout(fuelNotifTimer);
                     fuelNotifTimer = setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
 
-                    scene.remove(fuelCan);
-                    fuelCans.splice(i, 1);
+                    removeInteractive(fuelCan, fuelCans, i, fuelCanPool);
                     updateEffectBadges();
 
                     if (state.fuelCansCollected >= 5) {
@@ -5620,8 +5749,7 @@
                         state.shielded = true;
                     }
                     audio.playFuelPickup();
-                    scene.remove(p);
-                    powerups.splice(i, 1);
+                    removeInteractive(p, powerups, i, powerupPool);
                     updateEffectBadges();
                     unlockAchievement('collect_powerup');
                 }
@@ -5703,37 +5831,57 @@
         }
         
         // ============= HUD UPDATE =============
+        // Last-written HUD values so updateHUD (called every frame) only touches the DOM
+        // when something actually changed — writing width/background/textContent every
+        // frame forced a continuous style recalc on mobile for numbers that move ~once a
+        // second. Reset in setupLevel so the first frame of a new run always paints.
+        let _hudFuelR = -1, _hudHpR = -1, _hudDistTxt = '', _hudTimerTxt = '';
+        function resetHUDCache() { _hudFuelR = -1; _hudHpR = -1; _hudDistTxt = ''; _hudTimerTxt = ''; }
         function updateHUD() {
             const fuelPct = Math.max(0, (state.fuel / state.maxFuel) * 100);
-            fuelFill.style.width = `${fuelPct}%`;
-            fuelFill.style.background = barColor(fuelPct);
+            const fuelR = Math.round(fuelPct);
+            if (fuelR !== _hudFuelR) {
+                fuelFill.style.width = fuelR + '%';
+                fuelFill.style.background = barColor(fuelPct);
+                _hudFuelR = fuelR;
+            }
 
             const hpPct = Math.max(0, (state.hp / state.maxHp) * 100);
-            hpFill.style.width = `${hpPct}%`;
-            hpFill.style.background = barColor(hpPct);
-            // Flash the HP bar when death is imminent.
-            if (hpBar) hpBar.classList.toggle('critical', hpPct <= 25 && hpPct > 0);
+            const hpR = Math.round(hpPct);
+            if (hpR !== _hudHpR) {
+                hpFill.style.width = hpR + '%';
+                hpFill.style.background = barColor(hpPct);
+                // Flash the HP bar when death is imminent.
+                if (hpBar) hpBar.classList.toggle('critical', hpPct <= 25 && hpPct > 0);
+                _hudHpR = hpR;
+            }
 
+            let distTxt;
             if (state.mode === 'endless') {
                 let best = SaveSystem.data.endless.bestDistance || 0;
                 if (state.daily) {
                     const d = SaveSystem.data.daily;
                     best = (d && d.date === todaySeedString()) ? (d.best || 0) : 0;
                 }
-                distanceText.textContent = `📏 ${Math.floor(state.distance)} م | أفضل${state.daily ? ' اليوم' : ''}: ${best}`;
+                distTxt = `📏 ${Math.floor(state.distance)} م | أفضل${state.daily ? ' اليوم' : ''}: ${best}`;
             } else {
                 const level = CONFIG.levels[state.currentLevel];
                 const remaining = Math.max(0, Math.floor(level.distance - state.distance));
-                distanceText.textContent = `المتبقي: ${remaining} م`;
+                distTxt = `المتبقي: ${remaining} م`;
             }
+            if (distTxt !== _hudDistTxt) { distanceText.textContent = distTxt; _hudDistTxt = distTxt; }
 
             if (state.mode === 'timeTrial' && timerInfo.style.display !== 'none') {
                 const t = Math.max(0, state.timeRemaining);
                 const min = Math.floor(t / 60);
                 const sec = Math.floor(t % 60);
-                timerValue.textContent = `${min.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
-                if (t < 10) timerValue.classList.add('warning');
-                else timerValue.classList.remove('warning');
+                const timerTxt = `${min.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+                if (timerTxt !== _hudTimerTxt) {
+                    timerValue.textContent = timerTxt;
+                    if (t < 10) timerValue.classList.add('warning');
+                    else timerValue.classList.remove('warning');
+                    _hudTimerTxt = timerTxt;
+                }
             }
         }
         
@@ -5920,10 +6068,17 @@
             
             const level = CONFIG.levels[state.currentLevel];
 
+            // Optional gamepad: sets targetSteering/throttle before they're consumed below.
+            pollGamepad();
+
             // Frame-rate-independent steering smoothing: the per-frame blend is scaled by
             // delta so turning feels identical at 30fps and 144fps (no more 8-frame lag).
             const steerBlend = 1 - Math.pow(CONFIG.vehicle.steeringDamping, delta * 60);
             state.steering += (state.targetSteering - state.steering) * steerBlend;
+            // Storm vagueness applied to the LIVE steering (see stormSteerFactor): the car's
+            // movement, lean, wheel angle and engine pitch all use this reduced value, so a
+            // sandstorm starting/ending mid-hold takes effect immediately for every input.
+            const effSteering = state.steering * stormSteerFactor();
 
             // Vehicle stats + boost multiplier + throttle (gas/brake).
             const baseSpeed = state.activeVehicle ? state.activeVehicle.stats.topSpeed : CONFIG.vehicle.speed;
@@ -6055,7 +6210,7 @@
             vehicle.position.z += speed * delta;
             state.distance = vehicle.position.z;
 
-            vehicle.position.x += state.steering * speed * delta;
+            vehicle.position.x += effSteering * speed * delta;
             vehicle.position.x = Math.max(-25, Math.min(25, vehicle.position.x));
             
             const targetHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z) + CONFIG.vehicle.groundOffset;
@@ -6096,8 +6251,8 @@
             const terrainRoll = Math.atan2(leftHeight - rightHeight, 3);
 
             const damageBias = state.hp < state.maxHp * CONFIG.damage.tiltThreshold ? 0.08 : 0;
-            vehicle.rotation.z = -state.steering * CONFIG.vehicle.bodyTiltFactor + damageBias + terrainRoll * 0.5;
-            vehicle.rotation.y = state.steering * 0.3;
+            vehicle.rotation.z = -effSteering * CONFIG.vehicle.bodyTiltFactor + damageBias + terrainRoll * 0.5;
+            vehicle.rotation.y = effSteering * 0.3;
             vehicle.rotation.x = -terrainPitch * 1.1;
 
             if (vehicle.wheels) {
@@ -6106,7 +6261,7 @@
                     if (wheel.children[1]) wheel.children[1].rotation.x += speed * delta * 2;
                     // Front wheels (first two) visibly steer with the input, a touch more
                     // than the body yaw so the turn reads clearly.
-                    if (i < 2) wheel.rotation.y = state.steering * 0.6;
+                    if (i < 2) wheel.rotation.y = effSteering * 0.6;
                 });
             }
 
@@ -6223,9 +6378,18 @@
             // braking sips fuel — a real tactical trade-off (speed vs range/reaction time).
             state.fuel -= level.fuelConsumption * fuelEff * state.throttleApplied * delta * 60;
 
+            // Low-fuel audio alert (fires once as fuel first crosses below 20%; re-armed if
+            // a pickup lifts it back above the threshold, so it warns again on the next dip).
+            const fuelFrac = state.fuel / state.maxFuel;
+            if (fuelFrac <= 0.2 && state.fuel > 0) {
+                if (!state.lowFuelWarned) { audio.playLowFuel(); state.lowFuelWarned = true; }
+            } else if (fuelFrac > 0.25) {
+                state.lowFuelWarned = false;
+            }
+
             checkCollisions();
 
-            audio.updateEngine(speed, state.steering);
+            audio.updateEngine(speed, effSteering);
 
             // Refresh effect badges on a fixed cadence so the boost countdown
             // ticks steadily (was Math.random() < 0.1 → jittery updates).
@@ -6361,6 +6525,21 @@
             }
         }
 
+        // ============= ENTER PLAY STATE (shared) =============
+        // The three ways into active gameplay — a fresh run (beginRun), a retry
+        // (restartGame) and advancing a level (goToNextLevel) — used to each open-code
+        // the same "show HUD + controls + start audio" ritual, and they had DRIFTED:
+        // only beginRun started the music, so the ambient pad went silent forever after
+        // the first game-over/next-level. Centralising it here fixes that and stops the
+        // three paths diverging again.
+        function enterPlayState() {
+            hud.style.display = 'flex';
+            pauseBtn.style.display = 'flex';
+            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
+            audio.startEngine();
+            audio.startMusic();
+        }
+
         // ============= GO TO NEXT LEVEL =============
         function goToNextLevel() {
             levelCompleteScreen.style.display = 'none';
@@ -6370,22 +6549,24 @@
             state.cameraRotating = false;
 
             setupLevel();
-            hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
-            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
-            audio.startEngine();
+            enterPlayState();
         }
 
         // ============= START GAME =============
+        // Reentrancy latch: a level card double-tap schedules two beginRun() calls (200ms
+        // delay each), and the endless "start" button can be double-tapped too — both would
+        // otherwise build the level twice. Ignore a second start within the debounce window.
+        let _beginningRun = false;
         function beginRun() {
+            if (_beginningRun) return;
+            _beginningRun = true;
+            setTimeout(() => { _beginningRun = false; }, 300);
+
             startScreen.style.display = 'none';
             modeSelectScreen.style.display = 'none';
             vehicleSelectScreen.style.display = 'none';
             levelSelectScreen.style.display = 'none';
             tutorialModal.style.display = 'none';
-            hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
-            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
             touchHint.style.display = 'block';
 
             audio.init();
@@ -6402,9 +6583,8 @@
             rebuildVehicle(state.pendingVehicleId);
 
             setupLevel();
-            audio.startEngine();
-            audio.startMusic();
             clock.start();
+            enterPlayState();
 
             setTimeout(() => { touchHint.style.display = 'none'; }, 5000);
         }
@@ -6427,16 +6607,18 @@
             clock.start();
 
             setupLevel();
-            hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
-            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
-            audio.startEngine();
+            enterPlayState();
         }
 
         // ============= "Play Again" from win screen =============
+        // The button reads "العب من البداية" (play from the beginning), so it should
+        // actually START a fresh run, not drop back to the main menu. Story restarts the
+        // whole campaign at level 1; any other mode replays the level just finished. Same
+        // vehicle/mode the player already picked — keep their momentum at the win moment.
         function playAgain() {
-            // Return to start menu
-            quitToMenu();
+            winScreen.style.display = 'none';
+            state.pendingLevel = (state.mode === 'story') ? 0 : state.currentLevel;
+            beginRun();
         }
 
         // ============= QUIT TO MENU =============
@@ -6476,6 +6658,23 @@
             audio.masterGain.gain.value = SaveSystem.data.settings.volume * 0.6;
         }
 
+        // Toggle the shadow map, recompiling materials so the change actually takes effect.
+        // Flipping renderer.shadowMap.enabled AFTER materials are compiled does nothing on
+        // already-built materials until they're recompiled — so the adaptive ladder's
+        // "drop shadows" tier (and manual low) could keep sampling a stale/frozen shadow map
+        // instead of dropping the cost. Guarded on actual change so it recompiles once, not
+        // on every settings apply.
+        function setShadowsEnabled(on) {
+            if (!renderer || renderer.shadowMap.enabled === on) return;
+            renderer.shadowMap.enabled = on;
+            scene.traverse(o => {
+                if (!o.material) return;
+                const mats = Array.isArray(o.material) ? o.material : [o.material];
+                mats.forEach(m => { if (m) m.needsUpdate = true; });
+            });
+            renderer.shadowMap.needsUpdate = true;
+        }
+
         // ============= ADAPTIVE QUALITY (auto mode) =============
         // When quality === 'auto', the renderer starts at full quality and steps DOWN a
         // cost ladder whenever the average FPS stays under 45 for a 3s window. Down-only
@@ -6498,7 +6697,7 @@
             ];
             const t = ladder[Math.max(0, Math.min(AUTO_MAX_TIER, tier))];
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, t.pr));
-            renderer.shadowMap.enabled = t.shadows;
+            setShadowsEnabled(t.shadows);
             usePostProcessing = t.pp && postProcessingReady;
             if (bloomPass) bloomPass.strength = 0.5;
             if (composer) composer.setSize(window.innerWidth, window.innerHeight);
@@ -6536,16 +6735,16 @@
             autoQualityEnabled = false;
             if (q === 'low') {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-                renderer.shadowMap.enabled = false;
+                setShadowsEnabled(false);
                 usePostProcessing = false;                  // direct render, no bloom (mobile-safe)
             } else if (q === 'medium') {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-                renderer.shadowMap.enabled = true;
+                setShadowsEnabled(true);
                 usePostProcessing = postProcessingReady;
                 if (bloomPass) bloomPass.strength = 0.45;
             } else {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                renderer.shadowMap.enabled = true;
+                setShadowsEnabled(true);
                 usePostProcessing = postProcessingReady;
                 if (bloomPass) bloomPass.strength = 0.6;
             }
