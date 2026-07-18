@@ -1851,6 +1851,19 @@
 
             window.addEventListener('resize', onResize);
 
+            // WebGL context loss recovery. The OS can reclaim the GPU context (common on
+            // mobile after the app is backgrounded, or under VRAM pressure), which otherwise
+            // leaves a permanently black canvas. Catch it, freeze the loop, and offer a
+            // one-tap reload — a clean rebuild is far simpler and more reliable than trying
+            // to recreate every GPU resource in place for a single-file game.
+            const glCanvas = renderer.domElement;
+            glCanvas.addEventListener('webglcontextlost', (e) => {
+                e.preventDefault();          // required for a restore to ever be possible
+                state.isPlaying = false;     // stop the loop from touching a dead context
+                try { audio.stopEngine(); audio.stopMusic(); } catch (err) {}
+                showContextLostOverlay();
+            }, false);
+
             // Progressive enhancement: load post-processing addons asynchronously.
             // If the CDN modules fail (e.g. first-run offline), the game still runs
             // with a plain render path.
@@ -1858,6 +1871,31 @@
             // Optional real camel model — see setupCamelModel(). Purely additive; the
             // procedural camel already works and keeps being used until/unless this resolves.
             setupCamelModel();
+        }
+
+        // Full-screen "graphics stopped — tap to restart" overlay shown when the WebGL
+        // context is lost (see initThreeJS). Reuses one element; tapping reloads for a clean
+        // rebuild. RTL Arabic to match the game.
+        function showContextLostOverlay() {
+            try {
+                let el = document.getElementById('contextLostOverlay');
+                if (!el) {
+                    el = document.createElement('div');
+                    el.id = 'contextLostOverlay';
+                    el.setAttribute('role', 'alert');
+                    el.style.cssText = 'position:fixed;inset:0;z-index:3000;display:flex;flex-direction:column;' +
+                        'justify-content:center;align-items:center;gap:18px;text-align:center;padding:24px;' +
+                        'background:linear-gradient(180deg,#1a0f00,#3d2810);color:#fff;font-family:inherit;';
+                    el.innerHTML = '<div style="font-size:2.2rem;">⚠️ توقّف العرض مؤقتاً</div>' +
+                        '<div style="font-size:1.05rem;color:#d4a574;max-width:480px;line-height:1.7;">' +
+                        'فقد المتصفح سياق الرسوميات (يحدث أحياناً بعد ترك اللعبة في الخلفية). ' +
+                        'اضغط لإعادة التشغيل — تقدّمك محفوظ.</div>' +
+                        '<button class="start-btn" style="pointer-events:auto;">🔄 إعادة التشغيل</button>';
+                    el.addEventListener('click', () => location.reload());
+                    document.body.appendChild(el);
+                }
+                el.style.display = 'flex';
+            } catch (err) { try { location.reload(); } catch (e2) {} }
         }
 
         async function setupPostProcessing() {
@@ -6581,6 +6619,23 @@
             audio.masterGain.gain.value = SaveSystem.data.settings.volume * 0.6;
         }
 
+        // Toggle the shadow map, recompiling materials so the change actually takes effect.
+        // Flipping renderer.shadowMap.enabled AFTER materials are compiled does nothing on
+        // already-built materials until they're recompiled — so the adaptive ladder's
+        // "drop shadows" tier (and manual low) could keep sampling a stale/frozen shadow map
+        // instead of dropping the cost. Guarded on actual change so it recompiles once, not
+        // on every settings apply.
+        function setShadowsEnabled(on) {
+            if (!renderer || renderer.shadowMap.enabled === on) return;
+            renderer.shadowMap.enabled = on;
+            scene.traverse(o => {
+                if (!o.material) return;
+                const mats = Array.isArray(o.material) ? o.material : [o.material];
+                mats.forEach(m => { if (m) m.needsUpdate = true; });
+            });
+            renderer.shadowMap.needsUpdate = true;
+        }
+
         // ============= ADAPTIVE QUALITY (auto mode) =============
         // When quality === 'auto', the renderer starts at full quality and steps DOWN a
         // cost ladder whenever the average FPS stays under 45 for a 3s window. Down-only
@@ -6603,7 +6658,7 @@
             ];
             const t = ladder[Math.max(0, Math.min(AUTO_MAX_TIER, tier))];
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, t.pr));
-            renderer.shadowMap.enabled = t.shadows;
+            setShadowsEnabled(t.shadows);
             usePostProcessing = t.pp && postProcessingReady;
             if (bloomPass) bloomPass.strength = 0.5;
             if (composer) composer.setSize(window.innerWidth, window.innerHeight);
@@ -6641,16 +6696,16 @@
             autoQualityEnabled = false;
             if (q === 'low') {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1));
-                renderer.shadowMap.enabled = false;
+                setShadowsEnabled(false);
                 usePostProcessing = false;                  // direct render, no bloom (mobile-safe)
             } else if (q === 'medium') {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-                renderer.shadowMap.enabled = true;
+                setShadowsEnabled(true);
                 usePostProcessing = postProcessingReady;
                 if (bloomPass) bloomPass.strength = 0.45;
             } else {
                 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-                renderer.shadowMap.enabled = true;
+                setShadowsEnabled(true);
                 usePostProcessing = postProcessingReady;
                 if (bloomPass) bloomPass.strength = 0.6;
             }
