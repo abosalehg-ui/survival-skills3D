@@ -1553,6 +1553,27 @@
                 });
             }
             
+            // Low-fuel warning: two short descending beeps. Fired once when fuel first
+            // drops below the warning threshold (see gameLoop) — the HP bar already flashes
+            // for low health, this gives fuel an equivalent, non-visual alert.
+            playLowFuel() {
+                if (!this.initialized) return;
+                [880, 660].forEach((freq, i) => {
+                    const osc = this.ctx.createOscillator();
+                    osc.type = 'square';
+                    osc.frequency.value = freq;
+                    const gain = this.ctx.createGain();
+                    const t0 = this.ctx.currentTime + i * 0.18;
+                    gain.gain.value = 0;
+                    gain.gain.setTargetAtTime(0.12, t0, 0.01);
+                    gain.gain.setTargetAtTime(0, t0 + 0.10, 0.05);
+                    osc.connect(gain);
+                    gain.connect(this.masterGain);
+                    osc.start(t0);
+                    osc.stop(t0 + 0.3);
+                });
+            }
+
             // Simple celebration sound - just a pleasant ding
             playCelebration() {
                 if (!this.initialized) return;
@@ -1644,6 +1665,7 @@
             timeElapsed: 0,                // for story best-time tracking
             fuelCansCollected: 0,
             damageTakenThisLevel: false,
+            lowFuelWarned: false,          // one-shot latch for the low-fuel warning beep
 
             // Power-ups. Expiry times are in game-time seconds (compared against
             // timeElapsed, which only advances during play) so pausing freezes
@@ -4414,13 +4436,19 @@
             const group = new THREE.Group();
             const x = (rand() - 0.5) * 12;
 
-            let baseColor, glowColor, icon;
+            let baseColor, glowColor;
             if (type === 'boost') { baseColor = 0xffcc00; glowColor = 0xffee44; }
             else if (type === 'fuel') { baseColor = 0x33aaff; glowColor = 0x66ccff; }
             else if (type === 'shield') { baseColor = 0x00ddee; glowColor = 0x66f0ff; }
 
-            // Floating diamond shape
-            const geom = new THREE.OctahedronGeometry(0.45, 0);
+            // Distinct SHAPE per power-up (not colour alone) so red/green-blind players can
+            // still tell them apart: a pointed cone = speed/boost, a round icosahedron =
+            // shield dome, an upright cylinder = fuel canister. All ~0.45u so the collision
+            // radius and float behaviour are unchanged.
+            let geom;
+            if (type === 'boost') geom = new THREE.ConeGeometry(0.4, 0.9, 5);
+            else if (type === 'shield') geom = new THREE.IcosahedronGeometry(0.48, 0);
+            else geom = new THREE.CylinderGeometry(0.34, 0.34, 0.7, 10);
             const mat = new THREE.MeshStandardMaterial({
                 color: baseColor,
                 emissive: baseColor,
@@ -5338,6 +5366,7 @@
             state.timeElapsed = 0;
             state.fuelCansCollected = 0;
             state.damageTakenThisLevel = false;
+            state.lowFuelWarned = false;
             state.boostUntil = 0;
             state.fuelDoubler = false;
             state.shielded = false;
@@ -5529,7 +5558,42 @@
             }
 
         }
-        
+
+        // ============= GAMEPAD (optional) =============
+        // Polled once per active frame (see gameLoop). Reuses the same targetSteering/throttle
+        // channels as swipe/keyboard/buttons, so it stays consistent with the storm penalty
+        // and everything downstream. Only writes when a stick/button is actually engaged, so a
+        // connected-but-idle pad never fights keyboard/touch input. Fully guarded — a missing
+        // Gamepad API or odd controller mapping can never break the loop.
+        function pollGamepad() {
+            try {
+                if (!navigator.getGamepads) return;
+                const pads = navigator.getGamepads();
+                let gp = null;
+                for (const p of pads) { if (p && p.connected) { gp = p; break; } }
+                if (!gp) return;
+
+                // Steering: left-stick X (axis 0) or the d-pad (buttons 14/15). Sign matches
+                // the keyboard convention (left → +targetSteering); a small dead-zone kills
+                // stick drift, and the remaining range is rescaled to the full steer angle.
+                const dead = 0.18;
+                let ax = gp.axes[0] || 0;
+                if (gp.buttons[14] && gp.buttons[14].pressed) ax = -1;
+                else if (gp.buttons[15] && gp.buttons[15].pressed) ax = 1;
+                if (Math.abs(ax) > dead) {
+                    const mag = Math.min(1, (Math.abs(ax) - dead) / (1 - dead));
+                    state.targetSteering = -Math.sign(ax) * mag * CONFIG.vehicle.maxSteerAngle;
+                }
+
+                // Throttle: RT / A = gas, LT / B = brake (leave at cruise when neither is held
+                // so keyboard/touch throttle is not overridden by an idle pad).
+                const gas = (gp.buttons[7] && gp.buttons[7].pressed) || (gp.buttons[0] && gp.buttons[0].pressed);
+                const brake = (gp.buttons[6] && gp.buttons[6].pressed) || (gp.buttons[1] && gp.buttons[1].pressed);
+                if (gas && !brake) state.throttle = 1.15;
+                else if (brake && !gas) state.throttle = 0.6;
+            } catch (e) { /* gamepad is optional */ }
+        }
+
         // ============= IMPACT DEBRIS (pooled, cosmetic) =============
         // A small ring-buffer pool of shard meshes reused for every impact — allocation-free
         // after warm-up. Shared geometry + two materials (rock/hole). Not tracked by the
@@ -6049,6 +6113,9 @@
             
             const level = CONFIG.levels[state.currentLevel];
 
+            // Optional gamepad: sets targetSteering/throttle before they're consumed below.
+            pollGamepad();
+
             // Frame-rate-independent steering smoothing: the per-frame blend is scaled by
             // delta so turning feels identical at 30fps and 144fps (no more 8-frame lag).
             const steerBlend = 1 - Math.pow(CONFIG.vehicle.steeringDamping, delta * 60);
@@ -6356,6 +6423,15 @@
             // braking sips fuel — a real tactical trade-off (speed vs range/reaction time).
             state.fuel -= level.fuelConsumption * fuelEff * state.throttleApplied * delta * 60;
 
+            // Low-fuel audio alert (fires once as fuel first crosses below 20%; re-armed if
+            // a pickup lifts it back above the threshold, so it warns again on the next dip).
+            const fuelFrac = state.fuel / state.maxFuel;
+            if (fuelFrac <= 0.2 && state.fuel > 0) {
+                if (!state.lowFuelWarned) { audio.playLowFuel(); state.lowFuelWarned = true; }
+            } else if (fuelFrac > 0.25) {
+                state.lowFuelWarned = false;
+            }
+
             checkCollisions();
 
             audio.updateEngine(speed, effSteering);
@@ -6522,7 +6598,15 @@
         }
 
         // ============= START GAME =============
+        // Reentrancy latch: a level card double-tap schedules two beginRun() calls (200ms
+        // delay each), and the endless "start" button can be double-tapped too — both would
+        // otherwise build the level twice. Ignore a second start within the debounce window.
+        let _beginningRun = false;
         function beginRun() {
+            if (_beginningRun) return;
+            _beginningRun = true;
+            setTimeout(() => { _beginningRun = false; }, 300);
+
             startScreen.style.display = 'none';
             modeSelectScreen.style.display = 'none';
             vehicleSelectScreen.style.display = 'none';
