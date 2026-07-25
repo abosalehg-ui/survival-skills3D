@@ -43,6 +43,9 @@ const starsSrc = slice('// @stars-testable-start', '// @stars-testable-end');
 const rngSrc = slice('// @rng-testable-start', '// @rng-testable-end');
 // deepDefaults/sanitizeNumberMap guard the save against corruption; they are pure.
 const saveSrc = slice('// @savemerge-testable-start', '// @savemerge-testable-end');
+// rockJitter keys boulder displacement to the vertex POSITION so non-indexed geometry
+// stays welded — see the test at the bottom for why that matters.
+const rockSrc = slice('// @rockjitter-testable-start', '// @rockjitter-testable-end');
 
 // Build the terrain functions with a mock CONFIG/state (the only globals they read).
 // goalFlattenZ mirrors state.goalFlattenZ: null = no goal flattening (endless / default).
@@ -58,6 +61,7 @@ const { computeStars, starParSeconds } = new Function(starsSrc + '\n return { co
 const { mulberry32, hashStr } = new Function(rngSrc + '\n return { mulberry32, hashStr };')();
 const { deepDefaults, sanitizeNumberMap } =
     new Function(saveSrc + '\n return { deepDefaults, sanitizeNumberMap };')();
+const { rockJitter } = new Function(rockSrc + '\n return { rockJitter };')();
 
 // --- CONFIG/VEHICLES extracted from the shipped source, so balance tests can't drift ---
 // Pulled with narrow regexes rather than by evaluating the whole module (which needs a DOM).
@@ -321,6 +325,67 @@ test('sanitizeNumberMap strips values that would crash the level menu', () => {
     assert.deepEqual(sanitizeNumberMap(null), {});
     assert.deepEqual(sanitizeNumberMap('nope'), {});
     assert.deepEqual(sanitizeNumberMap([1, 2]), {});
+});
+
+// --- Boulders must stay welded ----------------------------------------------
+// DodecahedronGeometry is NON-INDEXED: each triangle carries its own copy of each of its
+// three corners. Jittering per vertex with Math.random() gave every copy a different
+// displacement, so the triangles pulled apart and the rock rendered as a cloud of
+// disconnected shards. rockJitter must be a pure function of the corner's position.
+test('rockJitter gives every duplicate of a corner the identical displacement', () => {
+    const seed = 123.456;
+    // The same corner as it would appear in three separate triangles of the same rock.
+    const corner = [0.7236, -0.4472, 0.5257];
+    const a = rockJitter(corner[0], corner[1], corner[2], seed);
+    const b = rockJitter(corner[0], corner[1], corner[2], seed);
+    const c = rockJitter(corner[0], corner[1], corner[2], seed);
+    assert.equal(a, b, 'duplicate corners must not drift apart');
+    assert.equal(b, c, 'duplicate corners must not drift apart');
+
+    // Simulate the real failure: a non-indexed triangle soup where one corner is shared by
+    // four faces. After displacement every copy must land on the SAME point, or there is a
+    // hole in the surface.
+    const shared = [-0.2764, 0.8506, 0.4472];
+    const placed = new Set();
+    for (let face = 0; face < 4; face++) {
+        const f = 1 + (rockJitter(shared[0], shared[1], shared[2], seed) - 0.5) * 0.35;
+        placed.add([shared[0] * f, shared[1] * f, shared[2] * f].join(','));
+    }
+    assert.equal(placed.size, 1, `corner split into ${placed.size} positions — the rock would have gaps`);
+});
+
+test('rockJitter still varies across corners and seeds, and stays in range', () => {
+    const seed = 42;
+    const corners = [
+        [0.7236, -0.4472, 0.5257], [-0.2764, 0.8506, 0.4472], [0.0, 0.0, 1.0],
+        [-0.8944, 0.4472, 0.0], [0.5257, 0.7236, -0.4472], [0.309, -0.5, 0.809],
+    ];
+    const values = corners.map(c => rockJitter(c[0], c[1], c[2], seed));
+    assert.ok(values.every(v => v >= 0 && v < 1), 'factors must be in [0,1)');
+    assert.ok(new Set(values.map(v => v.toFixed(6))).size >= corners.length - 1,
+        'distinct corners must get distinct displacement, or the rock is a plain sphere');
+    // A different rock (different seed) gets a different shape.
+    const other = corners.map(c => rockJitter(c[0], c[1], c[2], seed + 7));
+    assert.notDeepEqual(values, other, 'different seed must produce a different boulder');
+    // The resulting radius scale stays within the intended +/-17.5% band.
+    for (const v of values) {
+        const f = 1 + (v - 0.5) * 0.35;
+        assert.ok(f > 0.82 && f < 1.18, `displacement factor out of band: ${f}`);
+    }
+});
+
+// Static guard: the failure mode was Math.random() INSIDE the per-vertex loop. Catch any
+// future edit that reintroduces it, since the visual damage is only obvious in-game.
+test('the boulder vertex loop contains no per-vertex Math.random()', () => {
+    const start = html.indexOf('const rp = geom.attributes.position;');
+    assert.ok(start !== -1, 'boulder vertex loop not found');
+    const end = html.indexOf('geom.computeVertexNormals();', start);
+    assert.ok(end !== -1 && end > start, 'end of boulder vertex loop not found');
+    const loop = html.slice(start, end);
+    assert.ok(loop.includes('for (let i = 0; i < rp.count'), 'expected the per-vertex loop here');
+    const randomInLoop = loop.slice(loop.indexOf('for (let i = 0; i < rp.count'));
+    assert.ok(!randomInLoop.includes('Math.random()'),
+        'Math.random() inside the per-vertex loop tears the non-indexed rock into shards');
 });
 
 // --- Daily seeded RNG --------------------------------------------------------

@@ -1297,7 +1297,16 @@
                 steeringDamping: 0.86,   // per-60fps-frame retention; lower = snappier turning
                 bodyTiltFactor: 0.15,
                 gravity: 30,
+                // Fallback ride height, used only until a vehicle has been measured (see
+                // measureRideOffset). Every playable body is authored with its wheels'
+                // contact patch at local y≈0, so the old flat 0.6 lifted the whole car
+                // ~0.6u into the air — invisible from the chase camera, which cannot see
+                // under the car, and glaring during the victory orbit (a hovering car with
+                // a fully detached shadow beneath it).
                 groundOffset: 0.6,
+                // Gap left between the tyres and the sand, so the wheels don't visibly sink
+                // when the body pitches/rolls on a slope.
+                rideClearance: 0.06,
                 terrainFollowSpeed: 0.28,   // per-60fps-frame retention; applied via pow(.., delta*60)
                 // Drop RATE (units/second) past which the car launches off a crest. -42 is
                 // the old per-frame -0.7 threshold expressed per second (-0.7 / (1/60)), so
@@ -4314,8 +4323,37 @@
             return optimizeStaticGroup(group);
         }
 
+        // ============= RIDE HEIGHT =============
+        // How far the group origin must sit above the terrain for the TYRES to touch it.
+        // Measured from the wheels' own bounding box rather than hard-coded, because the
+        // four bodies place their wheels at different heights with different radii —
+        // contact patch at local y = -0.01 / 0.00 / +0.05 / +0.10 respectively — so no
+        // single constant can be correct for all of them.
+        function measureRideOffset(group) {
+            try {
+                if (!group || !group.wheels || !group.wheels.length) return CONFIG.vehicle.groundOffset;
+                group.updateMatrixWorld(true);
+                const box = new THREE.Box3();
+                group.wheels.forEach(w => box.expandByObject(w));
+                if (box.isEmpty() || !isFinite(box.min.y)) return CONFIG.vehicle.groundOffset;
+                return -box.min.y + CONFIG.vehicle.rideClearance;
+            } catch (e) {
+                return CONFIG.vehicle.groundOffset;   // never let a measurement break the level
+            }
+        }
+
+        // The active vehicle's ride height (falls back to the config constant before a
+        // vehicle exists). Used for placement AND for the collision height test, which
+        // needs the car's true ground-contact line.
+        function rideOffset() {
+            return (vehicle && vehicle.userData && typeof vehicle.userData.rideOffset === 'number')
+                ? vehicle.userData.rideOffset
+                : CONFIG.vehicle.groundOffset;
+        }
+
         // ============= VEHICLE FACTORY =============
         // Returns a playable vehicle group with the contract (wheels, headlights, frontLight, cargo, cargoBounds)
+        // plus userData.rideOffset — how high the group must sit for its tyres to touch.
         function buildPlayerVehicle(vehicleId) {
             const def = VEHICLES.find(v => v.id === vehicleId) || VEHICLES[0];
             if (def.creator === 'landCruiser') {
@@ -4328,6 +4366,12 @@
                 return createSmallTruck(def.bodyColor, { playable: true });
             }
             return createVehicle();
+        }
+        // Single funnel used by initGame/rebuildVehicle so no caller can forget to measure.
+        function buildMeasuredVehicle(vehicleId) {
+            const group = buildPlayerVehicle(vehicleId);
+            group.userData.rideOffset = measureRideOffset(group);
+            return group;
         }
 
         // ============= TERRAIN GENERATION =============
@@ -4552,6 +4596,29 @@
             return { surface: mesh, base: base };
         }
         
+        // ============= BOULDER SHAPE NOISE =============
+        // DodecahedronGeometry — like every PolyhedronGeometry in three.js — is
+        // NON-INDEXED: every triangle carries its own private copy of each of its three
+        // corners. The old boulder code jittered `position` per VERTEX with Math.random(),
+        // which handed each copy of a shared corner a DIFFERENT displacement, so adjacent
+        // triangles pulled apart and the rock rendered as a cloud of disconnected shards
+        // with visible gaps between them.
+        //
+        // Keying the displacement to the corner's COORDINATES instead means every copy of
+        // the same corner moves identically and the surface stays closed. createMountains()
+        // already derives its displacement from the vertex position for exactly this
+        // reason; this brings the rocks in line with it.
+        // @rockjitter-testable-start
+        function rockJitter(x, y, z, seed) {
+            // Quantise first. Copies of one corner are already bit-identical coming out of
+            // the generator, but rounding makes the hash immune to any future float drift
+            // (a bucket is ~0.001u, while distinct dodecahedron corners are >0.5u apart).
+            const q = (v) => Math.round(v * 1024) / 1024;
+            const t = Math.sin(q(x) * 12.9898 + q(y) * 78.233 + q(z) * 37.719 + seed) * 43758.5453;
+            return t - Math.floor(t);   // [0, 1)
+        }
+        // @rockjitter-testable-end
+
         // ============= OBSTACLES =============
         function createObstacle(z, forcedX) {
             const level = CONFIG.levels[state.currentLevel];
@@ -4563,11 +4630,16 @@
             if (type === 'rock') {
                 const rockSize = 0.7 + Math.random() * 1.0;
                 const geom = new THREE.DodecahedronGeometry(rockSize, 1);
-                // Irregular boulder shape: jitter each vertex outward by noise.
+                // Irregular boulder shape: push each CORNER in or out along its own radius.
+                // The factor comes from rockJitter(position) — never Math.random() per
+                // vertex — so the duplicated corners of this non-indexed geometry stay
+                // welded and the boulder reads as one solid rock (see rockJitter above).
                 const rp = geom.attributes.position;
+                const jitterSeed = Math.random() * 1000;   // one seed per rock, not per vertex
                 for (let i = 0; i < rp.count; i++) {
-                    const f = 1 + (Math.random() - 0.5) * 0.35;
-                    rp.setXYZ(i, rp.getX(i) * f, rp.getY(i) * f, rp.getZ(i) * f);
+                    const vx = rp.getX(i), vy = rp.getY(i), vz = rp.getZ(i);
+                    const f = 1 + (rockJitter(vx, vy, vz, jitterSeed) - 0.5) * 0.35;
+                    rp.setXYZ(i, vx * f, vy * f, vz * f);
                 }
                 rp.needsUpdate = true;
                 geom.computeVertexNormals();
@@ -5681,7 +5753,7 @@
             state.vehicleVelocityY = 0;
             // Start the car resting on the terrain at the origin (terrain is now hilly,
             // so spawning at a flat groundOffset would make it pop up on the first frame).
-            state.vehicleY = getTerrainHeight(0, 0) + CONFIG.vehicle.groundOffset;
+            state.vehicleY = getTerrainHeight(0, 0) + rideOffset();
             state.isGrounded = true;
             state.cameraY = state.vehicleY + 7;
             state.lastTrackZ = -999;
@@ -5747,7 +5819,7 @@
             initThreeJS();
             // Default vehicle for initial scene (will be replaced when player picks)
             state.activeVehicle = VEHICLES[0];
-            vehicle = buildPlayerVehicle(state.activeVehicle.id);
+            vehicle = buildMeasuredVehicle(state.activeVehicle.id);
             scene.add(vehicle);
             setupLevel();
         }
@@ -5762,7 +5834,7 @@
                 scene.remove(vehicle);
                 disposeObject3D(vehicle);   // free the old vehicle's geometry/materials
             }
-            vehicle = buildPlayerVehicle(def.id);
+            vehicle = buildMeasuredVehicle(def.id);
             scene.add(vehicle);
             // Track vehicle usage for achievement
             if (!SaveSystem.data.vehicles.played.includes(def.id)) {
@@ -6044,7 +6116,7 @@
                         if (!state.isGrounded) continue;
                     } else {
                         const obstacleTop = obstacle.position.y + obstacle.userData.radius;
-                        if (vehiclePos.y - CONFIG.vehicle.groundOffset > obstacleTop) continue;
+                        if (vehiclePos.y - rideOffset() > obstacleTop) continue;
                     }
                     if (now - state.lastCollisionTime > CONFIG.damage.invulnSeconds) {
                         // Shield absorbs hit
@@ -6678,7 +6750,7 @@
             vehicle.position.x += effSteering * speed * delta;
             vehicle.position.x = Math.max(-25, Math.min(25, vehicle.position.x));
             
-            const targetHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z) + CONFIG.vehicle.groundOffset;
+            const targetHeight = getTerrainHeight(vehicle.position.x, vehicle.position.z) + rideOffset();
             
             if (!state.isGrounded) {
                 state.vehicleVelocityY -= CONFIG.vehicle.gravity * delta;
@@ -7114,7 +7186,7 @@
         function restoreCheckpoint(snap) {
             state.distance = snap.z;
             vehicle.position.z = snap.z;
-            state.vehicleY = getTerrainHeight(vehicle.position.x, snap.z) + CONFIG.vehicle.groundOffset;
+            state.vehicleY = getTerrainHeight(vehicle.position.x, snap.z) + rideOffset();
             state.isGrounded = true;
             state.vehicleVelocityY = 0;
             vehicle.position.y = state.vehicleY;
