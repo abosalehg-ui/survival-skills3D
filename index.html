@@ -6,6 +6,14 @@
     <title>النجاة في الصحراء</title>
     <!-- deploy-trigger -->
 
+    <!-- Content Security Policy (item 15). The single-file constraint forces
+         'unsafe-inline' for scripts and styles, but everything else can still be locked
+         down: no plugins, no <base> hijack, no form posts, and network egress limited to
+         this origin plus the pinned Three.js CDN (whose modules are additionally
+         SRI-pinned in the importmap below). frame-ancestors is intentionally absent —
+         it is ignored in a <meta> CSP and only warns. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://cdn.jsdelivr.net; worker-src 'self'; manifest-src 'self'; media-src 'self' data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'">
+
     <!-- PWA -->
     <link rel="manifest" href="manifest.webmanifest">
     <meta name="theme-color" content="#3d2810">
@@ -163,6 +171,20 @@
             border-radius: 10px;
             overflow: hidden;
         }
+
+        /* The fuel/HP bars used to encode danger with COLOUR ALONE (green/amber/red),
+           which is invisible to a red-green colour-blind player — roughly 1 in 12 men.
+           A numeric readout beside each bar carries the same information in a second,
+           colour-independent channel (and is simply easier to read at a glance). */
+        .bar-num {
+            font-size: clamp(0.6rem, 2vw, 0.8rem);
+            font-variant-numeric: tabular-nums;
+            min-width: 3.2em;
+            color: #eee;
+            direction: ltr;
+            text-align: left;
+        }
+        .bar-num.low { color: #ff8a8a; font-weight: bold; }
         
         .fuel-fill {
             height: 100%;
@@ -211,6 +233,13 @@
             bottom: calc(80px + env(safe-area-inset-bottom, 0px));
             left: 0;
             right: 0;
+            /* MUST stay LTR. The page is dir="rtl", and an rtl flex container reverses its
+               main axis — which put #steerLeftBtn (◀) on the RIGHT of the screen and
+               #steerRightBtn (▶) on the left, i.e. the on-screen driving controls were
+               spatially mirrored. Steering direction itself was always correct; only the
+               placement was flipped. These are physical controls, not text: never inherit
+               the document's text direction here. */
+            direction: ltr;
             justify-content: space-between;
             padding: 0 18px;
             z-index: 90;
@@ -439,6 +468,31 @@
             transition: transform 0.15s ease;
         }
         #pauseBtn:active { transform: scale(0.92); }
+
+        /* Mute sits beside pause, same affordance, same size (44px+ touch target). */
+        #muteBtn {
+            position: fixed;
+            bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+            left: 72px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255,255,255,0.3);
+            color: #fff;
+            font-size: 1.2rem;
+            cursor: pointer;
+            z-index: 110;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+            font-family: inherit;
+            transition: transform 0.15s ease;
+        }
+        #muteBtn:active { transform: scale(0.92); }
+        #muteBtn.muted { border-color: rgba(255,120,120,0.7); color: #ff9a9a; }
 
         /* ============= HUD POWERUP/SANDSTORM BADGES ============= */
         #effectBadges {
@@ -738,6 +792,76 @@
             0%, 100% { opacity: 0.7; }
             50% { opacity: 1; }
         }
+
+        /* ============= REDUCED MOTION =============
+           Honour the OS accessibility setting: neutralise every decorative animation and
+           transition (title glow, shield pulse, critical-HP flash, badge pops, the mirage
+           shimmer). The in-game camera shake, sandstorm tremor and hit stop are gated
+           separately in JS via reduceMotionOn(), which also picks up the in-game toggle. */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.001ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.001ms !important;
+                scroll-behavior: auto !important;
+            }
+            #mirageOverlay { display: none !important; }
+        }
+        /* Same, driven by the in-game toggle rather than the OS (class set on <body>). */
+        body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+        }
+        body.reduce-motion #mirageOverlay { display: none !important; }
+
+        /* ============= LEVEL LOADING OVERLAY ============= */
+        /* setupLevel() builds ~33 terrain chunks (~55k height+slope evaluations), the goal
+           structure (hundreds of meshes) and every obstacle synchronously, then the first
+           frame compiles all the new shaders. On a mid-range phone that is a visible freeze
+           right after the player taps a level card — indistinguishable from a hang. */
+        #loadingOverlay {
+            position: fixed;
+            inset: 0;
+            z-index: 1500;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 16px;
+            background: linear-gradient(180deg, #1a0f00 0%, #3d2810 100%);
+            color: #d4a574;
+            font-size: clamp(1rem, 4vw, 1.4rem);
+        }
+        #loadingOverlay .loader-ring {
+            width: 44px;
+            height: 44px;
+            border: 4px solid rgba(212,165,116,0.25);
+            border-top-color: #d4a574;
+            border-radius: 50%;
+            animation: loaderSpin 0.9s linear infinite;
+        }
+        @keyframes loaderSpin { to { transform: rotate(360deg); } }
+
+        /* ============= CONTEXTUAL HINT TOAST ============= */
+        #hintToast {
+            position: fixed;
+            bottom: calc(170px + env(safe-area-inset-bottom, 0px));
+            left: 50%;
+            transform: translateX(-50%);
+            max-width: min(88vw, 460px);
+            padding: 10px 16px;
+            background: rgba(0,0,0,0.66);
+            border: 1px solid rgba(212,165,116,0.5);
+            border-radius: 12px;
+            color: #ffe9c9;
+            font-size: clamp(0.8rem, 3vw, 1rem);
+            text-align: center;
+            line-height: 1.6;
+            z-index: 120;
+            display: none;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -771,17 +895,23 @@
                 <div class="fuel-bar">
                     <div class="fuel-fill" id="fuelFill"></div>
                 </div>
+                <span class="bar-num" id="fuelNum" aria-label="الوقود">100%</span>
             </div>
             <div class="hp-container">
                 <span class="hp-icon">❤️</span>
                 <div class="hp-bar" id="hpBar">
                     <div class="hp-fill" id="hpFill"></div>
                 </div>
+                <span class="bar-num" id="hpNum" aria-label="الصحة">100%</span>
             </div>
         </div>
         <div class="hud-panel level-info">
             <div class="level-name" id="levelName">المرحلة الأولى</div>
             <div class="distance" id="distanceText">المسافة: 0 م</div>
+            <!-- Throttle now genuinely changes fuel economy (CONFIG.vehicle.throttleFuelExp).
+                 That is only a decision the player can make if they can SEE their speed and
+                 which throttle band they are in. -->
+            <div class="distance" id="speedText">🚀 <span id="speedValue">0</span> و/ث</div>
             <div class="timer-info" id="timerInfo" style="display:none;">
                 <div class="timer-name">⏱ الوقت</div>
                 <div class="timer-value" id="timerValue">00:00</div>
@@ -791,6 +921,10 @@
 
     <!-- Pause Button -->
     <button id="pauseBtn" aria-label="إيقاف">⏸</button>
+
+    <!-- One-tap mute. Muting previously meant opening Settings and dragging the volume
+         slider to zero — four interactions for the single most time-critical audio action. -->
+    <button id="muteBtn" aria-label="كتم الصوت">🔊</button>
 
     <!-- Effect Badges (powerups, sandstorm) -->
     <div id="effectBadges"></div>
@@ -810,6 +944,15 @@
         <button id="steerRightBtn" class="steer-btn" aria-label="انعطاف يمين">▶</button>
     </div>
 
+
+    <!-- Level build progress (see #loadingOverlay in the stylesheet) -->
+    <div id="loadingOverlay" role="status" aria-live="polite">
+        <div class="loader-ring"></div>
+        <div>جارٍ تحضير المرحلة…</div>
+    </div>
+
+    <!-- Contextual first-time hints (see maybeHint) -->
+    <div id="hintToast" role="status" aria-live="polite"></div>
 
     <!-- Touch Hint -->
     <div id="touchHint">👆 اسحب يميناً ويساراً للتحكم</div>
@@ -832,6 +975,11 @@
         <div class="end-title" id="endTitle">⛽ نفذ الوقود!</div>
         <div class="end-message" id="endMessage">لم تستطع الوصول في الوقت المناسب.</div>
         <button class="retry-btn" id="retryBtn">🔄 حاول مجدداً</button>
+        <!-- Shown only when a mid-route checkpoint was banked this run (long levels). -->
+        <button class="modal-btn" id="resumeCheckpointBtn" style="display:none; margin-top:14px;">🚩 متابعة من نقطة التفتيش</button>
+        <!-- Shown only after a daily-challenge run: the daily seed is identical worldwide,
+             so a score is only meaningful if it can be compared with someone. -->
+        <button class="modal-btn secondary" id="shareScoreBtn" style="display:none; margin-top:10px;">📤 شارك نتيجتك</button>
     </div>
     
     <!-- Final Win Screen -->
@@ -917,6 +1065,10 @@
                 <span class="modal-label">📳 اهتزاز</span>
                 <button class="toggle-btn active" id="vibrationToggle">مفعّل</button>
             </div>
+            <div class="modal-row">
+                <span class="modal-label">🎞 تقليل الحركة</span>
+                <button class="toggle-btn" id="reduceMotionToggle">مغلق</button>
+            </div>
             <div class="modal-actions">
                 <button class="modal-btn secondary" id="resetSaveBtn">🗑 مسح التقدم</button>
                 <button class="modal-btn" id="settingsCloseBtn">إغلاق ✓</button>
@@ -931,7 +1083,9 @@
             <ul class="tutorial-list">
                 <li>📱 <b>الجوال</b>: اسحب أو استخدم الأزرار ◀▶ للتوجيه</li>
                 <li>⌨️ <b>الكيبورد</b>: ←→/A D للتوجيه، ↑↓/W S للتسريع والفرملة، Esc/P للإيقاف</li>
-                <li>⛽ التقط <b>علب الوقود الخضراء</b> (+10 وقود، +5 صحة)</li>
+                <li>⛽ التقط <b>علب الوقود الخضراء</b> (+10 وقود، +5 صحة) — الوقود بالكاد يكفي للوصول، فلا تفوّتها</li>
+                <li>🚀 <b>الدوس</b> أسرع لكنه يستهلك وقوداً أكثر لكل متر، و<b>الفرملة</b> تمنحك وقتاً للتفادي بكلفة وقود أيضاً — أفضل مدى عند السرعة العادية</li>
+                <li>🚩 في المراحل الطويلة توجد <b>نقطة تفتيش</b> في المنتصف تستطيع المتابعة منها لو خسرت</li>
                 <li>⚡ <b>تعزيز السرعة</b> (أصفر): سرعة 1.5× لمدة 5 ثوان</li>
                 <li>🛡️ <b>الدرع</b> (سماوي): يحميك من الاصطدام التالي</li>
                 <li>⛽⛽ <b>مضاعف الوقود</b> (أزرق): العلبة التالية +20 وقود</li>
@@ -963,7 +1117,14 @@
             "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
         },
         "integrity": {
-            "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js": "sha384-61S/Nu32S3E5+n+KpCOTb2eRYps6fVKm+9Gz1QBvSePFthb46f063Aa/qe/lykFZ"
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js": "sha384-61S/Nu32S3E5+n+KpCOTb2eRYps6fVKm+9Gz1QBvSePFthb46f063Aa/qe/lykFZ",
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js": "sha384-L+Ns9skCAqjab7aG8LH5VLknBCoENW7p37sOj39jnITwlWZFabWc29JwzgYf6ygy",
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/RenderPass.js": "sha384-LwKrkOBAkmQ2KT4cv6P6q9Rb9L01GIFU34Zp16tGWZoBnrVuujfjpYZb7OxEMb0J",
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js": "sha384-R734/7SvtqjjeteDKG4qcQA0adDCZ1ZcKfYUZsbVr9qqHGlgSXH9eNN4b3NIgwuc",
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/SMAAPass.js": "sha384-KMSgC3atgu0arTMGveWOKuCxZdEbhymfjmW5QAg5Mocen0rPsHjqeHzl+YvV5HzJ",
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/postprocessing/OutputPass.js": "sha384-RJJc+pg+Ue2ZwXlf8n78cPHMiHrqfr+AxxabF5vkXMXjNPF6nSUoqb20IQXkMo6c",
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/GLTFLoader.js": "sha384-oxY9vSeh7Mrt5WmhN8xfWoDRnmoW9krEiRBY7vJKaK90jMUidM0fhbUwcblpBgTu",
+            "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/utils/BufferGeometryUtils.js": "sha384-jHGXS4+FuVOBnZkNme2ury3Ccg5DWDLYK22xX/WGdZCZsjRM4J+3n6Qc4CXx1Hjf"
         }
     }
     </script>
@@ -971,17 +1132,24 @@
     <!-- Diagnostic error display (shows JS errors on screen) -->
     <div id="errorDisplay" style="display:none; position:fixed; top:0; left:0; right:0; background:#c0392b; color:#fff; padding:14px; z-index:9999; font-family:monospace; font-size:0.85rem; max-height:60vh; overflow:auto; direction:ltr; text-align:left; white-space:pre-wrap;"></div>
     <script>
-        // Global error handlers - show errors on screen so we can diagnose
+        // Global error handlers. Errors are ALWAYS captured and logged, but the red
+        // full-width stack-trace panel is developer-only (?debug=1): shipping raw English
+        // stack traces over the top of an Arabic game is the ugliest thing a player can
+        // see, and they can't act on it anyway. window.__gameDebug is reused by the
+        // in-game diagnostics HUD further down.
         (function() {
+            var DEBUG_PANEL = false;
+            try { DEBUG_PANEL = new URLSearchParams(location.search).has('debug'); } catch (e) {}
+            window.__gameDebug = DEBUG_PANEL;
             function showErr(msg, src, line, col, err) {
                 var div = document.getElementById('errorDisplay');
-                if (!div) return;
+                console.error('CAUGHT:', msg, err);
+                if (!div || !DEBUG_PANEL) return;
                 div.style.display = 'block';
                 var text = '⚠ JS ERROR:\n' + (msg || '(no message)');
                 if (src) text += '\n  at ' + src + ':' + line + ':' + col;
                 if (err && err.stack) text += '\n' + err.stack;
                 div.textContent = (div.textContent ? div.textContent + '\n\n' : '') + text;
-                console.error('CAUGHT:', msg, err);
             }
             window.addEventListener('error', function(e) {
                 showErr(e.message, e.filename, e.lineno, e.colno, e.error);
@@ -1002,9 +1170,9 @@
                     name: 'المرحلة الأولى - الصباح',
                     timeOfDay: 'morning',
                     distance: 800,
-                    fuelConsumption: 0.012,
+                    fuelConsumption: 0.0232,
                     obstacleFrequency: 0.22,
-                    fuelCanFrequency: 0.08,
+                    fuelCanFrequency: 0.34,
                     powerupFrequency: 0.06,
                     duneHeight: 1.2,
                     targetName: 'محطة البنزين',
@@ -1022,9 +1190,9 @@
                     name: 'المرحلة الثانية - العصر',
                     timeOfDay: 'afternoon',
                     distance: 1000,
-                    fuelConsumption: 0.015,
+                    fuelConsumption: 0.0216,
                     obstacleFrequency: 0.28,
-                    fuelCanFrequency: 0.07,
+                    fuelCanFrequency: 0.32,
                     powerupFrequency: 0.07,
                     duneHeight: 1.5,
                     targetName: 'محطة البنزين',
@@ -1042,9 +1210,9 @@
                     name: 'المرحلة الثالثة - الليل',
                     timeOfDay: 'night',
                     distance: 900,
-                    fuelConsumption: 0.014,
+                    fuelConsumption: 0.0233,
                     obstacleFrequency: 0.25,
-                    fuelCanFrequency: 0.06,
+                    fuelCanFrequency: 0.30,
                     powerupFrequency: 0.08,
                     duneHeight: 1.3,
                     targetName: 'المخيم الصحراوي',
@@ -1062,9 +1230,9 @@
                     name: 'المرحلة الرابعة - الصحراء الصخرية',
                     timeOfDay: 'afternoon',
                     distance: 1100,
-                    fuelConsumption: 0.016,
+                    fuelConsumption: 0.0224,
                     obstacleFrequency: 0.36,
-                    fuelCanFrequency: 0.055,
+                    fuelCanFrequency: 0.30,
                     powerupFrequency: 0.09,
                     duneHeight: 0.7,
                     targetName: 'محطة الصخور',
@@ -1083,9 +1251,9 @@
                     name: 'المرحلة الخامسة - الواحة',
                     timeOfDay: 'morning',
                     distance: 950,
-                    fuelConsumption: 0.011,
+                    fuelConsumption: 0.0208,
                     obstacleFrequency: 0.20,
-                    fuelCanFrequency: 0.10,
+                    fuelCanFrequency: 0.32,
                     powerupFrequency: 0.11,
                     duneHeight: 0.9,
                     targetName: 'الواحة',
@@ -1104,9 +1272,9 @@
                     name: 'المرحلة السادسة - ممر الجبال',
                     timeOfDay: 'sunset',
                     distance: 1300,
-                    fuelConsumption: 0.018,
+                    fuelConsumption: 0.0212,
                     obstacleFrequency: 0.32,
-                    fuelCanFrequency: 0.06,
+                    fuelCanFrequency: 0.30,
                     powerupFrequency: 0.10,
                     duneHeight: 2.5,
                     targetName: 'القمة',
@@ -1130,8 +1298,19 @@
                 bodyTiltFactor: 0.15,
                 gravity: 30,
                 groundOffset: 0.6,
-                terrainFollowSpeed: 0.28,
-                collisionHalfWidth: 0.8   // effective car half-width for obstacle hits (was 1.0; tighter = fairer)
+                terrainFollowSpeed: 0.28,   // per-60fps-frame retention; applied via pow(.., delta*60)
+                // Drop RATE (units/second) past which the car launches off a crest. -42 is
+                // the old per-frame -0.7 threshold expressed per second (-0.7 / (1/60)), so
+                // the feel at 60fps is unchanged while 30/144Hz now behave identically.
+                launchDropRate: -42,
+                collisionHalfWidth: 0.8,  // effective car half-width for obstacle hits (was 1.0; tighter = fairer)
+                // Fuel burn vs throttle. factor = idle + (1-idle)*throttle^exp, with
+                // idle = 1 - 1/exp so the factor is exactly 1.0 at cruise (throttle 1.0)
+                // AND the range-per-fuel optimum sits exactly at cruise. Flooring costs
+                // real range, crawling wastes fuel idling — see the burn line in gameLoop.
+                // Previously burn was LINEAR in throttle, so throttle cancelled out of
+                // distance-per-fuel entirely and "hold gas forever" was strictly free.
+                throttleFuelExp: 6
             },
             camera: {
                 rotationDuration: 3.5
@@ -1147,7 +1326,9 @@
                 fuelLossOnHit: 4,
                 hpFromFuelCan: 5,
                 smokeThreshold: 0.5,
-                tiltThreshold: 0.25
+                tiltThreshold: 0.25,
+                invulnSeconds: 0.5,     // post-hit i-frames, measured on the GAME clock
+                hitStopSeconds: 0.07    // simulation freeze on impact (rendering continues)
             }
         };
 
@@ -1157,6 +1338,18 @@
         CONFIG.levels.forEach((lvl, i) => { lvl.terrainPhase = i * 1.7; });
 
         // ============= VEHICLE STATS =============
+        // Balance axis (rebalanced): ARMOUR TRADES AGAINST RANGE, monotonically.
+        // Fuel burn is per-SECOND, so range-per-tank = topSpeed / (burn * fuelEfficiency)
+        // * fuelCapacity — i.e. a faster car spends fewer seconds covering the same metres
+        // and therefore travels FURTHER on a tank. Previously the jeep was strictly
+        // dominated (shortest range AND most fragile, with its speed paying nothing back
+        // outside time trial) and the truck was dominant in story/endless.
+        //
+        // Range on level 6 (the longest route, 1300 m, needs a full tank to matter):
+        //   jeep 1477 m > pickup ~1397 m ≈ landCruiser 1415 m > truck 1321 m
+        //   hits survived:  jeep 3  <  landCruiser 5  <  pickup 6  <  truck 9
+        // No vehicle dominates another on both axes; the truck must actually use the
+        // fuel cans on level 6, which is the point.
         const VEHICLES = [
             {
                 id: 'landCruiser',
@@ -1172,7 +1365,7 @@
                     topSpeed: 18,
                     steeringSensitivity: 1.0
                 },
-                description: 'متوازنة - تحمّل جيد ووقود متوسط'
+                description: 'متوازنة — لا تتفوّق في شيء ولا تخذلك في شيء'
             },
             {
                 id: 'oldJeep',
@@ -1181,14 +1374,14 @@
                 creator: 'oldJeep',
                 bodyColor: 0x4a6a3a,
                 stats: {
-                    fuelCapacity: 80,
-                    fuelEfficiency: 1.1,
+                    fuelCapacity: 85,
+                    fuelEfficiency: 0.95,
                     maxHp: 75,
                     durability: 0.85,
                     topSpeed: 21,
                     steeringSensitivity: 1.25
                 },
-                description: 'سريعة لكن هشّة - للمغامرين'
+                description: 'الأسرع والأبعد مدى — لكنها تنهار من ٣ ضربات'
             },
             {
                 id: 'pickup',
@@ -1198,13 +1391,13 @@
                 bodyColor: 0xa83232,
                 stats: {
                     fuelCapacity: 115,
-                    fuelEfficiency: 1.05,
+                    fuelEfficiency: 1.1,
                     maxHp: 110,
                     durability: 1.1,
                     topSpeed: 17,
                     steeringSensitivity: 0.9
                 },
-                description: 'وقود أكبر، توازن قوي'
+                description: 'خزان أكبر وتحمّل أعلى، بمدى أقصر قليلاً'
             },
             {
                 id: 'smallTruck',
@@ -1213,14 +1406,14 @@
                 creator: 'smallTruck',
                 bodyColor: 0x4a6a8a,
                 stats: {
-                    fuelCapacity: 135,
-                    fuelEfficiency: 1.2,
+                    fuelCapacity: 140,
+                    fuelEfficiency: 1.25,
                     maxHp: 145,
                     durability: 1.35,
                     topSpeed: 15,
                     steeringSensitivity: 0.75
                 },
-                description: 'الأقوى والأبطأ - للناجين'
+                description: 'الأقوى والأبطأ — وأعطشها للوقود، لا تفوّت أي علبة'
             }
         ];
 
@@ -1238,7 +1431,13 @@
         // Pure, testable: 1 star for finishing, +1 for a clean run (no damage), +1 for
         // beating par time. Kept separate from rendering so tests/logic.test.mjs can check it.
         // @stars-testable-start
-        function starParSeconds(distance) { return (distance / 18) * 1.15; }   // ~cruise time +15%
+        // Par is measured against the CAR THE PLAYER IS DRIVING, not a hard-coded 18 u/s.
+        // With the old fixed divisor the third star was free for the 21-speed jeep and
+        // arithmetically IMPOSSIBLE for the 15-speed truck (1300/15 = 1.20x par > 1.15x),
+        // so the rating graded vehicle choice instead of skill.
+        function starParSeconds(distance, topSpeed) {
+            return (distance / (topSpeed || 18)) * 1.15;   // ~cruise time +15%
+        }
         function computeStars(damageTaken, time, par) {
             let s = 1;
             if (!damageTaken) s++;
@@ -1299,6 +1498,41 @@
 
         // ============= SAVE SYSTEM =============
         const SAVE_KEY = 'desertSurvival3D.v1';
+
+        // Recursively fill every missing/wrong-typed field from `defs`. The old load()
+        // only patched `campaign` and `daily` by hand, so a save that was truncated
+        // (quota exhaustion mid-write), hand-edited, or written by another page on the
+        // SAME ORIGIN — note *.github.io shares one origin across all of a user's
+        // repos — could arrive as e.g. {"schemaVersion":1} with `settings`/`vehicles`
+        // missing. That threw a TypeError during init, which aborted initGame()/gameLoop()
+        // AND made the "reset progress" button unreachable (it reads settings too):
+        // the game was permanently bricked with no in-app way out. Now the worst case is
+        // a field silently falling back to its default.
+        // @savemerge-testable-start
+        function deepDefaults(value, defs) {
+            // Arrays and primitives: accept only a type-compatible value, else the default.
+            if (Array.isArray(defs)) return Array.isArray(value) ? value : defs;
+            if (defs === null || typeof defs !== 'object') {
+                return (typeof value === typeof defs && value !== null) ? value : defs;
+            }
+            // Plain object: recurse per key. A non-object (or array) in its place is junk.
+            const out = (value && typeof value === 'object' && !Array.isArray(value)) ? value : {};
+            for (const k in defs) out[k] = deepDefaults(out[k], defs[k]);
+            return out;
+        }
+        // Free-form maps (bestTimes/stars keyed by level index) can't be covered by
+        // deepDefaults — it only knows the keys present in the defaults. Strip any entry
+        // whose value isn't a finite number so `bestTime.toFixed(1)` in populateLevelGrid
+        // can never throw on a tampered save.
+        function sanitizeNumberMap(map) {
+            if (!map || typeof map !== 'object' || Array.isArray(map)) return {};
+            for (const k in map) {
+                if (typeof map[k] !== 'number' || !isFinite(map[k])) delete map[k];
+            }
+            return map;
+        }
+        // @savemerge-testable-end
+
         const SaveSystem = {
             data: null,
             load() {
@@ -1313,10 +1547,24 @@
                 if (!this.data || !this.data.schemaVersion) {
                     this.data = this.defaults();
                 }
-                // Forward-compat: ensure fields added after v1 exist on older saves.
-                if (!this.data.campaign) this.data.campaign = { highestUnlocked: 0, bestTimes: {}, perfectRuns: [] };
-                if (!this.data.campaign.stars) this.data.campaign.stars = {};
-                if (!this.data.daily) this.data.daily = { date: null, best: 0 };
+                // Forward/backward-compat + corruption guard in one pass: every field the
+                // game reads is guaranteed to exist with the right type after this.
+                this.data = deepDefaults(this.data, this.defaults());
+                sanitizeNumberMap(this.data.campaign.bestTimes);
+                sanitizeNumberMap(this.data.campaign.stars);
+                sanitizeNumberMap(this.data.timeTrial.bestTimes);
+                // Achievements/played must hold known ids only (a junk id would render a
+                // blank row and could never be cleared).
+                const achIds = ACHIEVEMENTS.map(a => a.id);
+                this.data.achievements = this.data.achievements.filter(id => achIds.includes(id));
+                const vehIds = VEHICLES.map(v => v.id);
+                this.data.vehicles.played = this.data.vehicles.played.filter(id => vehIds.includes(id));
+                if (!vehIds.includes(this.data.vehicles.selectedId)) this.data.vehicles.selectedId = VEHICLES[0].id;
+                if (!['auto', 'low', 'medium', 'high'].includes(this.data.settings.quality)) {
+                    this.data.settings.quality = 'auto';
+                }
+                this.data.settings.volume = Math.max(0, Math.min(1, this.data.settings.volume));
+                this.data.settings.sensitivity = Math.max(0.5, Math.min(2, this.data.settings.sensitivity));
                 return this.data;
             },
             save() {
@@ -1333,7 +1581,9 @@
                         volume: 0.5,
                         sensitivity: 1.0,
                         quality: 'auto',   // adaptive by default: struggling devices self-tune down
-                        vibration: true
+                        vibration: true,
+                        reduceMotion: false,   // OR'd with the OS prefers-reduced-motion query
+                        muted: false           // one-tap mute, independent of the volume slider
                     },
                     campaign: {
                         highestUnlocked: 0,
@@ -1349,7 +1599,11 @@
                         played: []
                     },
                     achievements: [],
-                    tutorialShown: false
+                    tutorialShown: false,
+                    // Contextual first-time hints (see maybeHint) — a free-form map of
+                    // hintId -> true. deepDefaults leaves unknown keys alone, which is
+                    // exactly right for an open-ended set like this.
+                    hintsSeen: {}
                 };
             },
             reset() {
@@ -1640,6 +1894,8 @@
             hp: 100,
             maxHp: 100,
             distance: 0,
+            // Derived from `phase` by setPhase() — never assign these directly.
+            phase: 'menu',                 // 'menu'|'playing'|'paused'|'cinematic'|'over'
             isPlaying: false,
             isPaused: false,
             steering: 0,
@@ -1650,8 +1906,10 @@
             isGrounded: true,
             cameraY: 7,                    // smoothed camera height (lags vehicle so bobbing shows)
             shake: 0,                      // camera-shake impulse (impacts); decays each frame
+            hitStop: 0,                    // seconds of simulation freeze left after an impact
             throttle: 1.0,                 // speed multiplier target from gas/brake (0.6..1.15)
             throttleApplied: 1.0,          // smoothed throttle actually applied to speed
+            currentSpeed: 0,               // last applied forward speed (u/s) — shown in the HUD
             lastTrackZ: -999,              // last z where a tire-track pair was dropped
             trackIndex: 0,                 // ring-buffer cursor into the tire-track pool
             lastCollisionTime: 0,
@@ -1688,6 +1946,13 @@
             sandstormUntil: 0,
             sandstormToggleAt: 0,
 
+            // Mid-route checkpoint (long story/time-trial levels only). `checkpointZ` is
+            // where the snapshot is taken; `checkpointSnapshot` is the run state captured
+            // there, offered on the game-over screen so a death at 90% of a 1300 m route
+            // doesn't cost the whole 70-second run.
+            checkpointZ: null,
+            checkpointSnapshot: null,
+
             // Endless mode
             endlessSandstormNext: 0,
             endlessLastObstacleX: 0,   // reachability anchor for runtime obstacle spawns
@@ -1704,18 +1969,26 @@
         
         // ============= THREE.JS SETUP =============
         let scene, camera, renderer, vehicle, clock;
-        let terrain = [];
-        let obstacles = [];
-        let fuelCans = [];
-        let powerups = [];
-        let decorations = [];
-        let stars = [];
-        let clouds = [];
-        let mountains = [];
-        let tireTracks = [];
-        let dustParticles;
-        let smokeParticles = null;
-        let goalMarker;
+        // ============= WORLD (live scene contents) =============
+        // These twelve used to be twelve loose module-level `let`s adrift among ~25 globals,
+        // with nothing marking which subsystem owned what — the review's "scattered global
+        // state" debt. Grouping them behind one object gives the live scene contents a name
+        // and an explicit teardown list (setupLevel disposes exactly these), without
+        // splitting the file, which the repo's single-file constraint forbids.
+        const World = {
+            terrain: [],        // { surface, base } chunk pairs
+            obstacles: [],      // rocks / holes / camels
+            fuelCans: [],
+            powerups: [],
+            decorations: [],    // tents, palms
+            stars: [],          // star field + moon + sun disc (all follow the car)
+            clouds: [],
+            tireTracks: [],
+            mountains: [],
+            dustParticles: undefined,
+            smokeParticles: null,
+            goalMarker: undefined,
+        };
         const audio = new AudioSystem();
 
         // ============= GRAPHICS UPGRADE STATE =============
@@ -1754,7 +2027,29 @@
         const hpFill = document.getElementById('hpFill');
         const hpBar = document.getElementById('hpBar');
         const steerButtonsEl = document.getElementById('steerButtons');
+        const fuelNum = document.getElementById('fuelNum');
+        const hpNum = document.getElementById('hpNum');
+        const speedValue = document.getElementById('speedValue');
+        const muteBtn = document.getElementById('muteBtn');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const hintToast = document.getElementById('hintToast');
         const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+
+        // Reduced motion: honoured from BOTH the OS setting and an explicit in-game
+        // toggle (some players want it only here). Gates camera shake, the sandstorm
+        // tremor, hit stop and the mirage shimmer; CSS animations are handled by the
+        // matching @media block in the stylesheet.
+        let _osReduceMotion = false;
+        try {
+            const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+            _osReduceMotion = mq.matches;
+            const onChange = (e) => { _osReduceMotion = e.matches; };
+            if (mq.addEventListener) mq.addEventListener('change', onChange);
+            else if (mq.addListener) mq.addListener(onChange);
+        } catch (e) { /* matchMedia is optional */ }
+        function reduceMotionOn() {
+            return _osReduceMotion || !!(SaveSystem.data && SaveSystem.data.settings.reduceMotion);
+        }
 
         // Shared red→amber→green gradient for fuel/HP bars (was duplicated per bar).
         function barColor(pct) {
@@ -1776,6 +2071,8 @@
         const endTitle = document.getElementById('endTitle');
         const endMessage = document.getElementById('endMessage');
         const retryBtn = document.getElementById('retryBtn');
+        const resumeCheckpointBtn = document.getElementById('resumeCheckpointBtn');
+        const shareScoreBtn = document.getElementById('shareScoreBtn');
         const winScreen = document.getElementById('winScreen');
         const winMessage = document.getElementById('winMessage');
         const winBestScore = document.getElementById('winBestScore');
@@ -1886,7 +2183,7 @@
             const glCanvas = renderer.domElement;
             glCanvas.addEventListener('webglcontextlost', (e) => {
                 e.preventDefault();          // required for a restore to ever be possible
-                state.isPlaying = false;     // stop the loop from touching a dead context
+                setPhase('menu');            // stop the loop from touching a dead context
                 try { audio.stopEngine(); audio.stopMusic(); } catch (err) {}
                 showContextLostOverlay();
             }, false);
@@ -1895,6 +2192,8 @@
             // If the CDN modules fail (e.g. first-run offline), the game still runs
             // with a plain render path.
             setupPostProcessing();
+            // Static-geometry batching for the procedural vehicles (see optimizeStaticGroup).
+            setupGeometryMerger();
             // Optional real camel model — see setupCamelModel(). Purely additive; the
             // procedural camel already works and keeps being used until/unless this resolves.
             setupCamelModel();
@@ -2028,7 +2327,7 @@
         // Purely additive, off unless the URL has ?debug=1. Shows FPS + draw calls +
         // triangles + active quality so each future perf change can be measured on a
         // real device (there's no browser in the dev environment).
-        const DEBUG = (() => { try { return new URLSearchParams(location.search).has('debug'); } catch (e) { return false; } })();
+        const DEBUG = !!window.__gameDebug;
         let dbgEl = null, dbgAccum = 0, dbgFrames = 0;
         function setupDiagnostics() {
             if (!DEBUG) return;
@@ -2044,8 +2343,11 @@
                 const info = renderer.info.render;
                 const q = (SaveSystem.data && SaveSystem.data.settings.quality) || '?';
                 const qLabel = q + (autoQualityEnabled ? ('#' + autoTier) : '') + (usePostProcessing ? '+pp' : '');
+                // `batch` shows the last vehicle build's mesh count before -> after
+                // optimizeStaticGroup, so the item-7 saving is measurable on a real device.
+                const batch = lastMergeStats ? `${lastMergeStats.before}→${lastMergeStats.after}` : 'off';
                 dbgEl.textContent =
-                    `FPS   ${fps.toFixed(0)}\ncalls ${info.calls}\ntris  ${info.triangles}\nqual  ${qLabel}`;
+                    `FPS   ${fps.toFixed(0)}\ncalls ${info.calls}\ntris  ${info.triangles}\nqual  ${qLabel}\nbatch ${batch}`;
                 dbgAccum = 0; dbgFrames = 0;
             }
         }
@@ -2368,13 +2670,13 @@
         }
 
         function updateTireTracks() {
-            if (!tireTracks.length || !state.isGrounded) return;
+            if (!World.tireTracks.length || !state.isGrounded) return;
             if (vehicle.position.z - state.lastTrackZ < 1.0) return;   // drop spacing
             state.lastTrackZ = vehicle.position.z;
             const halfTrack = 0.82;
             const rearZ = vehicle.position.z - 1.3;
             for (let side = -1; side <= 1; side += 2) {
-                const m = tireTracks[state.trackIndex % tireTracks.length];
+                const m = World.tireTracks[state.trackIndex % World.tireTracks.length];
                 state.trackIndex++;
                 const tx = vehicle.position.x + side * halfTrack;
                 m.position.set(tx, getTerrainHeight(tx, rearZ) + 0.04, rearZ);
@@ -2423,13 +2725,13 @@
         function createClouds() {
             const level = CONFIG.levels[state.currentLevel];
             try {
-                const clouds = [];   // per-cloud drift state: { cx, cz, speed }
+                const cloudDefs = [];   // per-cloud drift state: { cx, cz, speed }
                 const puffs = [];    // per-instance: { cloudIdx, lx, ly, lz, size, sy }
                 for (let i = 0; i < 20; i++) {
                     const angle = Math.random() * Math.PI * 2;
                     const distance = 200 + Math.random() * 300;
-                    const cloudIdx = clouds.length;
-                    clouds.push({
+                    const cloudIdx = cloudDefs.length;
+                    cloudDefs.push({
                         cx: Math.sin(angle) * distance,
                         cz: Math.cos(angle) * distance,
                         gy: 80 + Math.random() * 60,
@@ -2451,7 +2753,9 @@
                 const group = new THREE.Group();
                 const inst = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 8, 8), cloudMaterial(level), puffs.length);
                 inst.frustumCulled = false;   // spans the whole sky and drifts every frame
-                inst.userData.cloudData = { clouds, puffs };
+                // Explicit key, NOT shorthand: writeCloudMatrices/updateClouds read
+                // `.clouds`, so the property name is a contract independent of the local.
+                inst.userData.cloudData = { clouds: cloudDefs, puffs };
                 group.add(inst);
                 group.userData.cloudInst = inst;
                 writeCloudMatrices(inst);
@@ -2467,9 +2771,11 @@
         const _cloudScl = new THREE.Vector3();
         const _cloudQuat = new THREE.Quaternion();
         function writeCloudMatrices(inst) {
-            const { clouds, puffs } = inst.userData.cloudData;
+            // Explicit rename, not shorthand destructuring: `clouds` is also the name of
+            // the module-level list of cloud GROUPS (clouds) — two different things.
+            const { clouds: cloudList, puffs } = inst.userData.cloudData;
             for (let k = 0; k < puffs.length; k++) {
-                const p = puffs[k], c = clouds[p.cloudIdx];
+                const p = puffs[k], c = cloudList[p.cloudIdx];
                 _cloudPos.set(c.cx + p.lx, c.gy + p.ly, c.cz + p.lz);
                 _cloudScl.set(p.size, p.size * p.sy, p.size);
                 _cloudM.compose(_cloudPos, _cloudQuat, _cloudScl);
@@ -3223,26 +3529,139 @@
             group.add(spareRim);
             
             // === ROOF RACK ===
-            const rackBarGeom = new THREE.CylinderGeometry(0.03, 0.03, 1.8, 6);
             const rackMat = new THREE.MeshStandardMaterial({ color: darkColor });
-            
-            [-0.5, 0.5].forEach(z => {
-                const bar = new THREE.Mesh(rackBarGeom, rackMat);
-                bar.rotation.z = Math.PI / 2;
-                bar.position.set(0, 2.45, 0.5 + z * 0.6);
-                group.add(bar);
+            VP.roofRack(group, rackMat, {
+                bars: [0.2, 0.8], barR: 0.03, barLen: 1.8, barY: 2.45,
+                supports: [[-0.85, 0.2], [0.85, 0.2], [-0.85, 0.8], [0.85, 0.8]],
+                supR: 0.02, supLen: 0.15, supY: 2.36,
             });
-            
-            [[-0.85, 0.2], [0.85, 0.2], [-0.85, 0.8], [0.85, 0.8]].forEach(([x, z]) => {
-                const supportGeom = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 6);
-                const support = new THREE.Mesh(supportGeom, rackMat);
-                support.position.set(x, 2.36, z);
-                group.add(support);
-            });
-            
-            return group;
+
+            // Collapse the ~250 static body meshes into a handful of draw calls (item 7).
+            return optimizeStaticGroup(group);
         }
         
+        // ============= STATIC GEOMETRY BATCHING (item 7) =============
+        // Three.js issues ONE draw call per Mesh — sharing a material (see vehMats below)
+        // saves GPU programs and memory but not a single draw call. Each procedural vehicle
+        // is ~200-300 separate meshes (createVehicle alone has 132 explicit `new THREE.Mesh`
+        // statements, many inside forEach loops), and the player's car is on screen every
+        // frame; a gas station adds four parked ones, a camp six. That is the dominant
+        // per-frame CPU cost on the mid-range phones this game targets, where the whole
+        // scene should stay in the low hundreds of draw calls.
+        //
+        // optimizeStaticGroup() collapses every *static* mesh in a group into one merged
+        // mesh per (material, attribute layout, shadow flags) bucket, baking each mesh's
+        // transform into its vertices. Expected: ~250 draw calls -> under a dozen per
+        // vehicle. Measure it with ?debug=1 (renderer.info.render.calls).
+        //
+        // Deliberately preserved (never merged), because they move independently:
+        //   * group.wheels  — spin and steer every frame
+        //   * group.cargo   — has its own physics in updateCargo()
+        //   * lights        — SpotLight/PointLight aren't geometry at all
+        //   * anything flagged userData.noMerge
+        //
+        // This is progressive enhancement, exactly like the post-processing path: if the
+        // BufferGeometryUtils module hasn't loaded (or anything throws), the group is
+        // returned untouched and renders exactly as before.
+        let mergeGeometriesFn = null;
+        let lastMergeStats = null;      // surfaced in the ?debug=1 HUD
+        async function setupGeometryMerger() {
+            try {
+                const mod = await import('three/addons/utils/BufferGeometryUtils.js');
+                mergeGeometriesFn = mod.mergeGeometries || mod.mergeBufferGeometries || null;
+            } catch (e) {
+                mergeGeometriesFn = null;   // vehicles simply stay unmerged
+            }
+        }
+
+        function optimizeStaticGroup(group) {
+            if (!group || !mergeGeometriesFn) return group;
+            try {
+                // 1. Mark the subtrees that must survive intact.
+                const keep = new Set();
+                (group.wheels || []).forEach(w => keep.add(w));
+                (group.cargo || []).forEach(c => keep.add(c));
+                group.traverse(n => {
+                    if (n.isLight || n.isSkinnedMesh || n.isInstancedMesh) keep.add(n);
+                    if (n.userData && n.userData.noMerge) keep.add(n);
+                });
+                const isKept = (o) => {
+                    for (let p = o; p && p !== group; p = p.parent) if (keep.has(p)) return true;
+                    return false;
+                };
+
+                // 2. Bucket every mergeable mesh by what has to match for a merge to be
+                //    legal AND visually identical.
+                group.updateMatrixWorld(true);
+                const invRoot = new THREE.Matrix4().copy(group.matrixWorld).invert();
+                const rel = new THREE.Matrix4();
+                const buckets = new Map();
+
+                group.traverse(node => {
+                    if (node === group || !node.isMesh) return;
+                    if (node.isSkinnedMesh || node.isInstancedMesh) return;
+                    if (node.children.length) return;            // merging would orphan them
+                    if (!node.visible) return;
+                    if (Array.isArray(node.material)) return;    // needs draw groups; not worth it
+                    const geo = node.geometry;
+                    if (!geo || !geo.attributes || !geo.attributes.position) return;
+                    if (isKept(node)) return;
+
+                    rel.multiplyMatrices(invRoot, node.matrixWorld);
+                    // A mirrored (negative-determinant) transform reverses triangle winding
+                    // once baked in, which would make the part vanish under backface culling.
+                    if (rel.determinant() <= 0) return;
+
+                    // mergeGeometries() requires an identical attribute set and a consistent
+                    // indexed/non-indexed choice across the whole batch, so both go in the key.
+                    const attrs = Object.keys(geo.attributes).sort().join(',');
+                    const key = node.material.uuid + '|' + attrs + '|' + (geo.index ? 'i' : 'n') +
+                                '|' + (node.castShadow ? 1 : 0) + (node.receiveShadow ? 1 : 0) +
+                                '|' + (node.renderOrder || 0);
+
+                    let b = buckets.get(key);
+                    if (!b) {
+                        b = {
+                            material: node.material, geos: [], nodes: [],
+                            castShadow: !!node.castShadow, receiveShadow: !!node.receiveShadow,
+                            renderOrder: node.renderOrder || 0
+                        };
+                        buckets.set(key, b);
+                    }
+                    const baked = geo.clone();
+                    baked.applyMatrix4(rel);   // also transforms normals via the normal matrix
+                    b.geos.push(baked);
+                    b.nodes.push(node);
+                });
+
+                // 3. Merge each bucket that actually saves something, then detach the
+                //    originals. Their geometries are NOT disposed: this runs at build time,
+                //    before the group is ever added to the scene, so nothing has been
+                //    uploaded to the GPU yet and there is no WebGL buffer to free — only
+                //    plain JS objects for the collector. (The merged result carries no
+                //    userData.shared flag, so disposeObject3D frees it normally later.)
+                let before = 0, after = 0;
+                buckets.forEach(b => {
+                    before += b.nodes.length;
+                    if (b.geos.length < 2) { after += b.nodes.length; return; }
+                    const mergedGeo = mergeGeometriesFn(b.geos, false);
+                    if (!mergedGeo) { after += b.nodes.length; return; }   // incompatible: keep as-is
+                    const mesh = new THREE.Mesh(mergedGeo, b.material);
+                    mesh.castShadow = b.castShadow;
+                    mesh.receiveShadow = b.receiveShadow;
+                    mesh.renderOrder = b.renderOrder;
+                    b.nodes.forEach(n => { if (n.parent) n.parent.remove(n); });
+                    group.add(mesh);
+                    after += 1;
+                });
+                lastMergeStats = { before, after };
+                return group;
+            } catch (e) {
+                // Any failure leaves the group exactly as it was built.
+                return group;
+            }
+        }
+
         // ============= SHARED VEHICLE MATERIALS =============
         // The jeep / pickup / small-truck builders each allocated an identical set of
         // non-body materials on EVERY call — and they're called many times (4 parked at
@@ -3317,6 +3736,36 @@
             mudFlaps(parent, mat, anchors, w, h, d, y, zOff) {
                 const geom = new THREE.BoxGeometry(w, h, d);
                 anchors.forEach(([x, z]) => VP.add(parent, geom, mat, x, y, z + zOff));
+            },
+            // A list of [px, py, pz, sx, sy, sz] boxes sharing one material. Replaces the
+            // literal `[[...]].forEach(([px,py,pz,sx,sy,sz]) => { new Mesh(new BoxGeometry(...)) })`
+            // block that the pickup and small-truck grille frames both open-coded.
+            boxes(parent, mat, specs) {
+                specs.forEach(([px, py, pz, sx, sy, sz]) => VP.box(parent, sx, sy, sz, mat, px, py, pz));
+            },
+            // The same box on both sides of the centre line — the single most repeated
+            // shape in every body (indicators, side trim, cladding, flatbed walls, steps).
+            mirroredBox(parent, w, h, d, mat, x, y, z, opts) {
+                [-1, 1].forEach(side => VP.box(parent, w, h, d, mat, side * x, y, z, opts));
+            },
+            // Door treatment for one side, mirrored: front + rear vertical seams, the
+            // handle, and (optionally) the chrome window-frame trim. All three decoration
+            // bodies built this from scratch with only the dimensions differing.
+            doorSide(parent, o) {
+                [-1, 1].forEach(side => {
+                    VP.box(parent, 0.02, o.seamH, 0.025, o.trimMat, side * o.seamX, o.seamY, o.seamFrontZ);
+                    VP.box(parent, 0.02, o.seamH, 0.025, o.trimMat, side * o.seamX, o.seamY, o.seamRearZ);
+                    VP.box(parent, 0.04, o.handleH, o.handleD, o.handleMat, side * o.handleX, o.handleY, o.handleZ);
+                    if (o.winTrimMat) {
+                        VP.box(parent, 0.025, 0.04, o.winTrimD, o.winTrimMat, side * o.seamX, o.winTrimY, o.winTrimZ);
+                    }
+                });
+            },
+            // Roof rack: cross bars (rotated to lie across the roof) on short supports.
+            // Shared by the land-cruiser body and the pickup cab.
+            roofRack(parent, mat, o) {
+                o.bars.forEach(z => VP.cyl(parent, o.barR, o.barR, o.barLen, 6, mat, 0, o.barY, z, { rz: Math.PI / 2 }));
+                o.supports.forEach(([x, z]) => VP.cyl(parent, o.supR, o.supR, o.supLen, 6, mat, x, o.supY, z));
             },
             // Box-housing side mirror (stalk + housing + glass), mirrored on both sides.
             // Shared by the pickup and small-truck bodies (the jeep uses a round housing).
@@ -3464,11 +3913,7 @@
             group.add(hoodRidge);
 
             // Front turn indicators (amber)
-            [-0.85, 0.85].forEach(x => {
-                const ind = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.10, 0.04), indicatorMat);
-                ind.position.set(x, 0.95, 1.80);
-                group.add(ind);
-            });
+            VP.mirroredBox(group, 0.14, 0.10, 0.04, indicatorMat, 0.85, 0.95, 1.80);
 
             // Side mirrors (round, classic Jeep style)
             [-1, 1].forEach(side => {
@@ -3481,34 +3926,21 @@
                 group.add(mirrorHousing);
             });
 
-            // Door seams (vertical lines on side)
-            [-1, 1].forEach(side => {
-                const seamFront = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.65, 0.025), trimMat);
-                seamFront.position.set(side * 0.91, 1.625, 0.45);
-                group.add(seamFront);
-                const seamRear = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.65, 0.025), trimMat);
-                seamRear.position.set(side * 0.91, 1.625, -0.75);
-                group.add(seamRear);
-                // Door handle
-                const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.15), handleMat);
-                handle.position.set(side * 0.93, 1.55, -0.5);
-                group.add(handle);
+            // Door seams + handles (no window trim on the open-body jeep)
+            VP.doorSide(group, {
+                trimMat, handleMat, seamH: 0.65, seamX: 0.91, seamY: 1.625,
+                seamFrontZ: 0.45, seamRearZ: -0.75,
+                handleH: 0.04, handleD: 0.15, handleX: 0.93, handleY: 1.55, handleZ: -0.5,
             });
 
             // Side body trim (horizontal)
-            [-1, 1].forEach(side => {
-                const trim = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.05, 3.3), trimMat);
-                trim.position.set(side * 0.91, 1.10, -0.15);
-                group.add(trim);
-            });
+            VP.mirroredBox(group, 0.02, 0.05, 3.3, trimMat, 0.91, 1.10, -0.15);
 
             // Mud flaps behind wheels
             VP.mudFlaps(group, trimMat, [[-0.9, -1.5], [0.9, -1.5]], 0.04, 0.30, 0.18, 0.30, -0.42);
 
             // License plate (rear)
-            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.16, 0.02), M.plate);
-            plate.position.set(0.3, 0.78, -1.84);
-            group.add(plate);
+            VP.box(group, 0.45, 0.16, 0.02, M.plate, 0.3, 0.78, -1.84);
 
             // Roll bar (above cabin)
             const rollBarMat = new THREE.MeshStandardMaterial({ color: 0x202020, metalness: 0.5, roughness: 0.5 });
@@ -3523,10 +3955,7 @@
             group.add(rollBar);
 
             // Exhaust pipe
-            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.35, 8), M.exhaust);
-            exhaust.rotation.x = Math.PI / 2;
-            exhaust.position.set(-0.7, 0.4, -1.95);
-            group.add(exhaust);
+            VP.cyl(group, 0.04, 0.04, 0.35, 8, M.exhaust, -0.7, 0.4, -1.95, { rx: Math.PI / 2 });
 
             if (playable) {
                 addPlayableExtras(group, [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]], 1.82);
@@ -3534,7 +3963,7 @@
                 VP.decoWheels(group, [[-0.9, 0.4, 1.2], [0.9, 0.4, 1.2], [-0.9, 0.4, -1.2], [0.9, 0.4, -1.2]], 0.4, 0.3, 0.18, 0.32, darkMat, M.rim);
             }
 
-            return group;
+            return optimizeStaticGroup(group);
         }
 
         function createPickupTruck(color, opts = {}) {
@@ -3639,19 +4068,13 @@
             group.add(hoodRidge);
 
             // Chrome grille frame around the grille
-            [[-0.48, 0.9, 2.815, 0.04, 0.34, 0.05], [0.48, 0.9, 2.815, 0.04, 0.34, 0.05],
-             [0, 1.08, 2.815, 0.95, 0.04, 0.05], [0, 0.72, 2.815, 0.95, 0.04, 0.05]].forEach(([px, py, pz, sx, sy, sz]) => {
-                const frame = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), chromeMat);
-                frame.position.set(px, py, pz);
-                group.add(frame);
-            });
+            VP.boxes(group, chromeMat, [
+                [-0.48, 0.9, 2.815, 0.04, 0.34, 0.05], [0.48, 0.9, 2.815, 0.04, 0.34, 0.05],
+                [0, 1.08, 2.815, 0.95, 0.04, 0.05], [0, 0.72, 2.815, 0.95, 0.04, 0.05],
+            ]);
 
             // Front turn indicators (amber, next to headlights)
-            [-0.88, 0.88].forEach(x => {
-                const ind = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.10, 0.04), indicatorMat);
-                ind.position.set(x, 1.0, 2.81);
-                group.add(ind);
-            });
+            VP.mirroredBox(group, 0.14, 0.10, 0.04, indicatorMat, 0.88, 1.0, 2.81);
 
             // Side mirrors
             VP.boxMirror(group, darkMat, M.mirrorGlass, {
@@ -3660,58 +4083,33 @@
                 gh: 0.12, gd: 0.10, glassX: 1.19,
             });
 
-            // Door seams + handles
-            [-1, 1].forEach(side => {
-                const seamFront = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.8, 0.025), trimMat);
-                seamFront.position.set(side * 0.96, 1.2, 1.65);
-                group.add(seamFront);
-                const seamRear = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.8, 0.025), trimMat);
-                seamRear.position.set(side * 0.96, 1.2, 0.0);
-                group.add(seamRear);
-                // Door handle
-                const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.16), handleMat);
-                handle.position.set(side * 0.98, 1.25, 0.3);
-                group.add(handle);
-                // Window frame trim
-                const winTrim = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.04, 1.40), chromeMat);
-                winTrim.position.set(side * 0.96, 1.72, 0.8);
-                group.add(winTrim);
+            // Door seams + handles + window trim
+            VP.doorSide(group, {
+                trimMat, handleMat, winTrimMat: chromeMat,
+                seamH: 0.8, seamX: 0.96, seamY: 1.2, seamFrontZ: 1.65, seamRearZ: 0.0,
+                handleH: 0.04, handleD: 0.16, handleX: 0.98, handleY: 1.25, handleZ: 0.3,
+                winTrimD: 1.40, winTrimY: 1.72, winTrimZ: 0.8,
             });
 
             // Lower body cladding (black plastic strip)
-            [-1, 1].forEach(side => {
-                const cladding = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.10, 4.0), trimMat);
-                cladding.position.set(side * 0.96, 0.78, 0.0);
-                group.add(cladding);
-            });
+            VP.mirroredBox(group, 0.03, 0.10, 4.0, trimMat, 0.96, 0.78, 0.0);
 
             // Mud flaps behind wheels (front and rear)
             VP.mudFlaps(group, trimMat, [[-1.0, 1.5], [1.0, 1.5], [-1.0, -1.2], [1.0, -1.2]], 0.04, 0.32, 0.18, 0.30, -0.42);
 
             // Roof rack
             const rackMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 });
-            [-0.35, 0.35].forEach(z => {
-                const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.6, 6), rackMat);
-                bar.rotation.z = Math.PI / 2;
-                bar.position.set(0, 1.88, 0.8 + z);
-                group.add(bar);
-            });
-            [[-0.8, 0.55], [0.8, 0.55], [-0.8, 1.05], [0.8, 1.05]].forEach(([x, z]) => {
-                const support = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.10, 6), rackMat);
-                support.position.set(x, 1.83, z);
-                group.add(support);
+            VP.roofRack(group, rackMat, {
+                bars: [0.45, 1.15], barR: 0.025, barLen: 1.6, barY: 1.88,
+                supports: [[-0.8, 0.55], [0.8, 0.55], [-0.8, 1.05], [0.8, 1.05]],
+                supR: 0.018, supLen: 0.10, supY: 1.83,
             });
 
             // License plate
-            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.16, 0.02), M.plate);
-            plate.position.set(0, 0.78, -2.06);
-            group.add(plate);
+            VP.box(group, 0.45, 0.16, 0.02, M.plate, 0, 0.78, -2.06);
 
             // Exhaust pipe (under rear)
-            const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.40, 8), M.exhaust);
-            exhaust.rotation.x = Math.PI / 2;
-            exhaust.position.set(-0.7, 0.42, -2.18);
-            group.add(exhaust);
+            VP.cyl(group, 0.045, 0.045, 0.40, 8, M.exhaust, -0.7, 0.42, -2.18, { rx: Math.PI / 2 });
 
             // Bull bar (front protective bar)
             const bullMat = new THREE.MeshStandardMaterial({ color: 0x202020, metalness: 0.6, roughness: 0.5 });
@@ -3731,7 +4129,7 @@
                 VP.decoWheels(group, [[-1.0, 0.45, 1.5], [1.0, 0.45, 1.5], [-1.0, 0.45, -1.2], [1.0, 0.45, -1.2]], 0.45, 0.3, 0.20, 0.32, darkMat, M.rim);
             }
 
-            return group;
+            return optimizeStaticGroup(group);
         }
 
         function createSmallTruck(color, opts = {}) {
@@ -3830,12 +4228,10 @@
             group.add(cabRoof);
 
             // Chrome grille frame
-            [[-0.73, 0.95, 2.32, 0.04, 0.36, 0.05], [0.73, 0.95, 2.32, 0.04, 0.36, 0.05],
-             [0, 1.15, 2.32, 1.42, 0.04, 0.05], [0, 0.75, 2.32, 1.42, 0.04, 0.05]].forEach(([px, py, pz, sx, sy, sz]) => {
-                const frame = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), chromeMat);
-                frame.position.set(px, py, pz);
-                group.add(frame);
-            });
+            VP.boxes(group, chromeMat, [
+                [-0.73, 0.95, 2.32, 0.04, 0.36, 0.05], [0.73, 0.95, 2.32, 0.04, 0.36, 0.05],
+                [0, 1.15, 2.32, 1.42, 0.04, 0.05], [0, 0.75, 2.32, 1.42, 0.04, 0.05],
+            ]);
 
             // Manufacturer emblem in center of grille
             const emblem = new THREE.Mesh(new THREE.BoxGeometry(0.20, 0.10, 0.04), chromeMat);
@@ -3843,11 +4239,7 @@
             group.add(emblem);
 
             // Front turn indicators (amber, on bumper)
-            [-0.85, 0.85].forEach(x => {
-                const ind = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.10, 0.04), indicatorMat);
-                ind.position.set(x, 0.72, 2.34);
-                group.add(ind);
-            });
+            VP.mirroredBox(group, 0.16, 0.10, 0.04, indicatorMat, 0.85, 0.72, 2.34);
 
             // Large side mirrors (truck-style)
             VP.boxMirror(group, darkMat, M.mirrorGlass, {
@@ -3856,30 +4248,16 @@
                 gh: 0.24, gd: 0.14, glassX: 1.23,
             });
 
-            // Door seams + handles
-            [-1, 1].forEach(side => {
-                const seamFront = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.0, 0.025), trimMat);
-                seamFront.position.set(side * 1.01, 1.3, 2.18);
-                group.add(seamFront);
-                const seamRear = new THREE.Mesh(new THREE.BoxGeometry(0.02, 1.0, 0.025), trimMat);
-                seamRear.position.set(side * 1.01, 1.3, 0.78);
-                group.add(seamRear);
-                // Door handle
-                const handle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.05, 0.18), handleMat);
-                handle.position.set(side * 1.03, 1.35, 1.0);
-                group.add(handle);
-                // Window frame trim (chrome around side window)
-                const winTrim = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.04, 1.05), chromeMat);
-                winTrim.position.set(side * 1.01, 1.80, 1.5);
-                group.add(winTrim);
+            // Door seams + handles + window trim
+            VP.doorSide(group, {
+                trimMat, handleMat, winTrimMat: chromeMat,
+                seamH: 1.0, seamX: 1.01, seamY: 1.3, seamFrontZ: 2.18, seamRearZ: 0.78,
+                handleH: 0.05, handleD: 0.18, handleX: 1.03, handleY: 1.35, handleZ: 1.0,
+                winTrimD: 1.05, winTrimY: 1.80, winTrimZ: 1.5,
             });
 
             // Cab access step
-            [-1.08, 1.08].forEach(x => {
-                const step = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.06, 0.6), trimMat);
-                step.position.set(x, 0.65, 1.5);
-                group.add(step);
-            });
+            VP.mirroredBox(group, 0.08, 0.06, 0.6, trimMat, 1.08, 0.65, 1.5);
 
             // Side reflectors on flatbed
             [-1, 1].forEach(side => {
@@ -3894,16 +4272,10 @@
             VP.mudFlaps(group, trimMat, [[-1.0, 1.8], [1.0, 1.8], [-1.0, -0.5], [1.0, -0.5], [-1.0, -1.8], [1.0, -1.8]], 0.04, 0.36, 0.20, 0.32, -0.47);
 
             // License plate (rear)
-            const plate = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.18, 0.02), M.plate);
-            plate.position.set(0, 0.75, -2.36);
-            group.add(plate);
+            VP.box(group, 0.50, 0.18, 0.02, M.plate, 0, 0.75, -2.36);
 
             // Cargo flatbed side walls (low walls for truck bed)
-            [-1, 1].forEach(side => {
-                const wall = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.30, 3.0), mat);
-                wall.position.set(side * 1.0, 1.55, -0.8);
-                group.add(wall);
-            });
+            VP.mirroredBox(group, 0.06, 0.30, 3.0, mat, 1.0, 1.55, -0.8);
 
             // Cargo straps (visual detail on flatbed)
             const strapMat = new THREE.MeshStandardMaterial({ color: 0x554433, roughness: 0.8 });
@@ -3939,7 +4311,7 @@
                 ], 0.5, 0.35, 0.22, 0.36, darkMat, M.rim);
             }
 
-            return group;
+            return optimizeStaticGroup(group);
         }
 
         // ============= VEHICLE FACTORY =============
@@ -5011,43 +5383,43 @@
 
         // ============= LEVEL SETUP =============
         function setupLevel() {
-            terrain.forEach(t => {
+            World.terrain.forEach(t => {
                 scene.remove(t.surface); disposeObject3D(t.surface);
                 scene.remove(t.base); disposeObject3D(t.base);
             });
-            obstacles.forEach(o => { scene.remove(o); disposeObject3D(o); });
-            fuelCans.forEach(f => { scene.remove(f); disposeObject3D(f); });
-            powerups.forEach(p => { scene.remove(p); disposeObject3D(p); });
-            decorations.forEach(d => { scene.remove(d); disposeObject3D(d); });
-            stars.forEach(s => { scene.remove(s); disposeObject3D(s); });
-            clouds.forEach(c => { scene.remove(c); disposeObject3D(c); });
-            mountains.forEach(m => { scene.remove(m); disposeObject3D(m); });
-            tireTracks.forEach(t => { scene.remove(t); disposeObject3D(t); });
-            tireTracks = [];
+            World.obstacles.forEach(o => { scene.remove(o); disposeObject3D(o); });
+            World.fuelCans.forEach(f => { scene.remove(f); disposeObject3D(f); });
+            World.powerups.forEach(p => { scene.remove(p); disposeObject3D(p); });
+            World.decorations.forEach(d => { scene.remove(d); disposeObject3D(d); });
+            World.stars.forEach(s => { scene.remove(s); disposeObject3D(s); });
+            World.clouds.forEach(c => { scene.remove(c); disposeObject3D(c); });
+            World.mountains.forEach(m => { scene.remove(m); disposeObject3D(m); });
+            World.tireTracks.forEach(t => { scene.remove(t); disposeObject3D(t); });
+            World.tireTracks = [];
             // Drain endless-mode pools so stale (possibly wrong-level-coloured) objects
             // from a previous run don't leak into the new level.
             obstaclePool.forEach(o => disposeObject3D(o)); obstaclePool.length = 0;
             fuelCanPool.forEach(o => disposeObject3D(o)); fuelCanPool.length = 0;
             powerupPool.forEach(o => disposeObject3D(o)); powerupPool.length = 0;
-            if (dustParticles) {
-                if (dustParticles.parent) dustParticles.parent.remove(dustParticles);
-                scene.remove(dustParticles); disposeObject3D(dustParticles);
+            if (World.dustParticles) {
+                if (World.dustParticles.parent) World.dustParticles.parent.remove(World.dustParticles);
+                scene.remove(World.dustParticles); disposeObject3D(World.dustParticles);
             }
-            if (smokeParticles) {
-                if (smokeParticles.parent) smokeParticles.parent.remove(smokeParticles);
-                disposeObject3D(smokeParticles);
-                smokeParticles = null;
+            if (World.smokeParticles) {
+                if (World.smokeParticles.parent) World.smokeParticles.parent.remove(World.smokeParticles);
+                disposeObject3D(World.smokeParticles);
+                World.smokeParticles = null;
             }
-            if (goalMarker) { scene.remove(goalMarker); disposeObject3D(goalMarker); }
+            if (World.goalMarker) { scene.remove(World.goalMarker); disposeObject3D(World.goalMarker); }
 
-            terrain = [];
-            obstacles = [];
-            fuelCans = [];
-            powerups = [];
-            decorations = [];
-            stars = [];
-            clouds = [];
-            mountains = [];
+            World.terrain = [];
+            World.obstacles = [];
+            World.fuelCans = [];
+            World.powerups = [];
+            World.decorations = [];
+            World.stars = [];
+            World.clouds = [];
+            World.mountains = [];
             // Reset tire-track trail for the new run.
             state.lastTrackZ = -999;
             state.trackIndex = 0;
@@ -5119,22 +5491,22 @@
             
             // Add mountains
             const mountainGroup = createMountains();
-            mountains.push(mountainGroup);
+            World.mountains.push(mountainGroup);
             scene.add(mountainGroup);
             
             // Add clouds
             const cloudGroup = createClouds();
-            clouds.push(cloudGroup);
+            World.clouds.push(cloudGroup);
             scene.add(cloudGroup);
 
             // Tire-track pool (laid down as the car drives).
-            tireTracks = createTireTracks();
+            World.tireTracks = createTireTracks();
 
             const numChunks = Math.ceil((level.distance + 200) / TERRAIN_CHUNK_SIZE) + 3;
             for (let i = 0; i < numChunks; i++) {
                 const zPos = i * TERRAIN_CHUNK_SIZE - TERRAIN_CHUNK_SIZE;
                 const chunk = createTerrainChunk(zPos, i);
-                terrain.push(chunk);
+                World.terrain.push(chunk);
                 scene.add(chunk.surface);
                 scene.add(chunk.base);
             }
@@ -5159,7 +5531,7 @@
                     x = Math.max(-7, Math.min(7, x));
                     lastObstacleX = x;
                     const obstacle = createObstacle(z, x);
-                    obstacles.push(obstacle);
+                    World.obstacles.push(obstacle);
                     scene.add(obstacle);
                 }
             }
@@ -5170,7 +5542,7 @@
                 for (let z = 140; z < obstacleEnd; z += 170) {
                     if (rand() < 0.5) {
                         const camel = createCamel(z);
-                        obstacles.push(camel);
+                        World.obstacles.push(camel);
                         scene.add(camel);
                     }
                 }
@@ -5179,7 +5551,7 @@
             for (let z = 80; z < fuelEnd; z += 50) {
                 if (rand() < level.fuelCanFrequency) {
                     const fuelCan = createFuelCan(z);
-                    fuelCans.push(fuelCan);
+                    World.fuelCans.push(fuelCan);
                     scene.add(fuelCan);
                 }
             }
@@ -5190,7 +5562,7 @@
                 if (rand() < (level.powerupFrequency || 0.06)) {
                     const type = powerupTypes[Math.floor(rand() * powerupTypes.length)];
                     const p = createPowerup(z, type);
-                    powerups.push(p);
+                    World.powerups.push(p);
                     scene.add(p);
                 }
             }
@@ -5201,13 +5573,13 @@
                 if (Math.random() > 0.55) {
                     const side = Math.random() > 0.5 ? 1 : -1;
                     const tent = createTent(side * (22 + Math.random() * 12), z);
-                    decorations.push(tent);
+                    World.decorations.push(tent);
                     scene.add(tent);
                 }
                 if (palmDensity > 0 && Math.random() < palmDensity) {
                     const palmX = (Math.random() > 0.5 ? 1 : -1) * (18 + Math.random() * 14);
                     const palm = createPalmTree(palmX, z);
-                    decorations.push(palm);
+                    World.decorations.push(palm);
                     scene.add(palm);
                 }
             }
@@ -5216,20 +5588,20 @@
             if (!isEndless) {
                 const goalZ = level.distance + 25;
                 if (level.goalType === 'camp') {
-                    goalMarker = createCamp(goalZ);
+                    World.goalMarker = createCamp(goalZ);
                 } else if (level.goalType === 'oasis') {
-                    goalMarker = createOasis(goalZ);
+                    World.goalMarker = createOasis(goalZ);
                 } else {
-                    goalMarker = createGasStation(goalZ);
+                    World.goalMarker = createGasStation(goalZ);
                 }
-                scene.add(goalMarker);
+                scene.add(World.goalMarker);
             } else {
-                goalMarker = null;
+                World.goalMarker = null;
             }
             
             if (level.timeOfDay === 'night') {
                 const starField = createStars();
-                stars.push(starField);
+                World.stars.push(starField);
                 scene.add(starField);
                 
                 // Headlights: decay=0 so the beam does NOT fall off with distance
@@ -5254,7 +5626,7 @@
                 // Followed in gameLoop with this forward offset so the moon stays ahead
                 // in the sky instead of being left behind mid-level (levels are 900m+).
                 moon.userData.followZ = 300;
-                stars.push(moon);
+                World.stars.push(moon);
                 scene.add(moon);
                 
                 const moonLight = new THREE.PointLight(0xaaaaff, 0.5, 800);
@@ -5271,11 +5643,11 @@
             // Daytime sun disc (night keeps its moon above). Tracked in `stars` so it
             // follows the car and is disposed on the next level change.
             const skyBody = createSkyBody(level);
-            if (skyBody) { stars.push(skyBody); scene.add(skyBody); }
+            if (skyBody) { World.stars.push(skyBody); scene.add(skyBody); }
 
-            dustParticles = createDustParticles();
-            vehicle.add(dustParticles);
-            dustParticles.position.set(0, 0.3, -2.5);
+            World.dustParticles = createDustParticles();
+            vehicle.add(World.dustParticles);
+            World.dustParticles.position.set(0, 0.3, -2.5);
 
             // (mirageOverlay visibility is set dynamically in updateEffectBadges, since
             // sandstorm is now intermittent rather than a fixed per-level flag.)
@@ -5314,8 +5686,10 @@
             state.cameraY = state.vehicleY + 7;
             state.lastTrackZ = -999;
             state.trackIndex = 0;
-            state.lastCollisionTime = 0;
-            state.cameraRotating = false;
+            // Game-clock based now, and timeElapsed also restarts at 0 — so seed this far
+            // enough in the past that the FIRST hit of a run isn't swallowed by i-frames.
+            state.lastCollisionTime = -999;
+            state.hitStop = 0;
 
             // Reset run-specific tracking
             state.timeElapsed = 0;
@@ -5333,6 +5707,10 @@
             state.sandstormActive = false;
             state.sandstormUntil = 0;
             state.sandstormToggleAt = (level.weather === 'sandstorm') ? (6 + Math.random() * 4) : 0;
+
+            // Mid-route checkpoint for the long story/time-trial routes (item 19).
+            state.checkpointZ = checkpointZFor(level, state.mode === 'endless');
+            state.checkpointSnapshot = null;
             if (state.mode === 'endless') {
                 state.endlessSandstormNext = 1200 + Math.random() * 800;
                 state.endlessLastObstacleX = 0;
@@ -5379,8 +5757,8 @@
             const def = VEHICLES.find(v => v.id === vehicleId) || VEHICLES[0];
             state.activeVehicle = def;
             if (vehicle) {
-                if (dustParticles && dustParticles.parent === vehicle) vehicle.remove(dustParticles);
-                if (smokeParticles && smokeParticles.parent === vehicle) vehicle.remove(smokeParticles);
+                if (World.dustParticles && World.dustParticles.parent === vehicle) vehicle.remove(World.dustParticles);
+                if (World.smokeParticles && World.smokeParticles.parent === vehicle) vehicle.remove(World.smokeParticles);
                 scene.remove(vehicle);
                 disposeObject3D(vehicle);   // free the old vehicle's geometry/materials
             }
@@ -5412,6 +5790,45 @@
         }
 
         function setupControls() {
+            // Held-input state lives here, above every listener, so ONE release path can
+            // clear all of it (see releaseAllInputs). Tracking steer keys per direction
+            // means releasing one doesn't cancel the other (old code zeroed steering on
+            // ANY steer-key keyup, so holding Left then tapping Right left the car
+            // going straight).
+            const steerKeys = { left: false, right: false };
+            const throttleKeys = { gas: false, brake: false };
+            const isLeftKey = (k) => k === 'ArrowLeft' || k === 'a' || k === 'A';
+            const isRightKey = (k) => k === 'ArrowRight' || k === 'd' || k === 'D';
+            const isGasKey = (k) => k === 'ArrowUp' || k === 'w' || k === 'W';
+            const isBrakeKey = (k) => k === 'ArrowDown' || k === 's' || k === 'S';
+            const applyKeySteering = () => {
+                if (steerKeys.left === steerKeys.right) state.targetSteering = 0;
+                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle;
+            };
+            // Gas / brake (throttle). Held keys set a target multiplier; releasing returns
+            // to cruise (1.0). Shared with the on-screen pedal buttons below.
+            const applyThrottle = () => {
+                if (throttleKeys.gas === throttleKeys.brake) state.throttle = 1.0;
+                else state.throttle = throttleKeys.gas ? 1.15 : 0.6;
+            };
+
+            // Drop EVERY held input and recentre. Needed because a held key/finger can be
+            // orphaned with no matching release event:
+            //   * window blur (alt-tab, notification, clicking outside the tab) swallows
+            //     the keyup — steering stayed latched at full lock, so resuming launched
+            //     the car sideways with no key held.
+            //   * touchcancel (incoming call, system gesture, notification shade) fires
+            //     INSTEAD of touchend — the swipe stayed latched until the next touch.
+            // Both were silent "unfair deaths"; this is the single recovery path.
+            const releaseAllInputs = () => {
+                steerKeys.left = steerKeys.right = false;
+                throttleKeys.gas = throttleKeys.brake = false;
+                applyKeySteering();
+                applyThrottle();
+                state.targetSteering = 0;
+            };
+            window.addEventListener('blur', releaseAllInputs);
+
             document.addEventListener('touchstart', (e) => {
                 // Ignore touches on UI elements
                 if (e.target.closest('button') || e.target.closest('.modal')) return;
@@ -5439,26 +5856,9 @@
                 if (e.touches.length === 0) state.targetSteering = 0;
             });
 
-            // Track held keys per direction so releasing one key doesn't cancel the
-            // other (old code zeroed steering on ANY steer-key keyup, so holding
-            // Left then tapping Right left the car going straight).
-            const steerKeys = { left: false, right: false };
-            const isLeftKey = (k) => k === 'ArrowLeft' || k === 'a' || k === 'A';
-            const isRightKey = (k) => k === 'ArrowRight' || k === 'd' || k === 'D';
-            const applyKeySteering = () => {
-                if (steerKeys.left === steerKeys.right) state.targetSteering = 0;
-                else state.targetSteering = (steerKeys.left ? 1 : -1) * CONFIG.vehicle.maxSteerAngle;
-            };
+            // A cancelled touch never produces a touchend — always drop the latch.
+            document.addEventListener('touchcancel', releaseAllInputs);
 
-            // Gas / brake (throttle). Held keys set a target multiplier; releasing returns
-            // to cruise (1.0). Shared with the on-screen pedal buttons below.
-            const throttleKeys = { gas: false, brake: false };
-            const isGasKey = (k) => k === 'ArrowUp' || k === 'w' || k === 'W';
-            const isBrakeKey = (k) => k === 'ArrowDown' || k === 's' || k === 'S';
-            const applyThrottle = () => {
-                if (throttleKeys.gas === throttleKeys.brake) state.throttle = 1.0;
-                else state.throttle = throttleKeys.gas ? 1.15 : 0.6;
-            };
             document.addEventListener('keydown', (e) => {
                 // Pause toggle (works during play)
                 if ((e.key === 'Escape' || e.key === 'p' || e.key === 'P') && state.isPlaying && !state.cameraRotating) {
@@ -5479,10 +5879,12 @@
                 else if (isBrakeKey(e.key)) { throttleKeys.brake = false; applyThrottle(); }
             });
 
-            // Auto-pause on tab hidden
+            // Auto-pause on tab hidden. Also drop held inputs: the keyup/touchend for
+            // whatever was held when the tab went away will never arrive.
             document.addEventListener('visibilitychange', () => {
-                if (document.hidden && state.isPlaying && !state.cameraRotating && !state.isPaused) {
-                    togglePause();
+                if (document.hidden) {
+                    releaseAllInputs();
+                    if (state.phase === 'playing') togglePause();
                 }
             });
 
@@ -5621,11 +6023,15 @@
         // ============= COLLISION DETECTION =============
         function checkCollisions() {
             const vehiclePos = vehicle.position;
-            const now = Date.now();
+            // Post-hit invulnerability runs on the GAME clock (state.timeElapsed), like the
+            // boost and sandstorm timers, not on wall time. With Date.now() the i-frames
+            // kept ticking while the game was paused, so pausing right after a hit handed
+            // back a free window — the one timer in the file still on real time.
+            const now = state.timeElapsed;
             const durability = state.activeVehicle ? state.activeVehicle.stats.durability : 1.0;
 
-            for (let i = obstacles.length - 1; i >= 0; i--) {
-                const obstacle = obstacles[i];
+            for (let i = World.obstacles.length - 1; i >= 0; i--) {
+                const obstacle = World.obstacles[i];
                 const dx = vehiclePos.x - obstacle.position.x;
                 const dz = vehiclePos.z - obstacle.position.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
@@ -5640,13 +6046,13 @@
                         const obstacleTop = obstacle.position.y + obstacle.userData.radius;
                         if (vehiclePos.y - CONFIG.vehicle.groundOffset > obstacleTop) continue;
                     }
-                    if (now - state.lastCollisionTime > 500) {
+                    if (now - state.lastCollisionTime > CONFIG.damage.invulnSeconds) {
                         // Shield absorbs hit
                         if (state.shielded) {
                             state.shielded = false;
                             audio.playCrash();
                             updateEffectBadges();
-                            removeInteractive(obstacle, obstacles, i, obstaclePool);
+                            removeInteractive(obstacle, World.obstacles, i, obstaclePool);
                             state.lastCollisionTime = now;
                             return true;
                         }
@@ -5662,6 +6068,11 @@
                         // Impact feedback: camera kick + a burst of debris shards so the
                         // hit "lands" instead of the obstacle silently vanishing.
                         state.shake = Math.min(0.6, state.shake + (isHole ? 0.3 : 0.5));
+                        // Hit stop: freeze the simulation for a few tens of ms so the
+                        // impact reads as an impact instead of the car sliding through it.
+                        // Consumed at the top of gameLoop; rendering continues, only the
+                        // world stops. Skipped under reduce-motion (it is a jolt too).
+                        if (!reduceMotionOn()) state.hitStop = CONFIG.damage.hitStopSeconds;
                         spawnDebris(obstacle.position, isHole);
                         if (SaveSystem.data && SaveSystem.data.settings.vibration && navigator.vibrate) {
                             navigator.vibrate(120);
@@ -5686,23 +6097,23 @@
                         }
 
                         // Attach smoke if HP low
-                        if (state.hp < state.maxHp * CONFIG.damage.smokeThreshold && !smokeParticles) {
-                            smokeParticles = createSmokeParticles();
-                            vehicle.add(smokeParticles);
-                            smokeParticles.position.set(0, 1.5, 1.8);
+                        if (state.hp < state.maxHp * CONFIG.damage.smokeThreshold && !World.smokeParticles) {
+                            World.smokeParticles = createSmokeParticles();
+                            vehicle.add(World.smokeParticles);
+                            World.smokeParticles.position.set(0, 1.5, 1.8);
                         }
 
                         state.lastCollisionTime = now;
                     }
 
                     vehicle.position.z -= 0.2;
-                    removeInteractive(obstacle, obstacles, i, obstaclePool);
+                    removeInteractive(obstacle, World.obstacles, i, obstaclePool);
                     return true;
                 }
             }
 
-            for (let i = fuelCans.length - 1; i >= 0; i--) {
-                const fuelCan = fuelCans[i];
+            for (let i = World.fuelCans.length - 1; i >= 0; i--) {
+                const fuelCan = World.fuelCans[i];
                 const dx = vehiclePos.x - fuelCan.position.x;
                 const dz = vehiclePos.z - fuelCan.position.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
@@ -5723,7 +6134,7 @@
                     clearTimeout(fuelNotifTimer);
                     fuelNotifTimer = setTimeout(() => { fuelNotification.style.display = 'none'; }, 1500);
 
-                    removeInteractive(fuelCan, fuelCans, i, fuelCanPool);
+                    removeInteractive(fuelCan, World.fuelCans, i, fuelCanPool);
                     updateEffectBadges();
 
                     if (state.fuelCansCollected >= 5) {
@@ -5733,8 +6144,8 @@
             }
 
             // Power-ups
-            for (let i = powerups.length - 1; i >= 0; i--) {
-                const p = powerups[i];
+            for (let i = World.powerups.length - 1; i >= 0; i--) {
+                const p = World.powerups[i];
                 const dx = vehiclePos.x - p.position.x;
                 const dz = vehiclePos.z - p.position.z;
                 const dist = Math.sqrt(dx * dx + dz * dz);
@@ -5749,7 +6160,7 @@
                         state.shielded = true;
                     }
                     audio.playFuelPickup();
-                    removeInteractive(p, powerups, i, powerupPool);
+                    removeInteractive(p, World.powerups, i, powerupPool);
                     updateEffectBadges();
                     unlockAchievement('collect_powerup');
                 }
@@ -5835,14 +6246,27 @@
         // when something actually changed — writing width/background/textContent every
         // frame forced a continuous style recalc on mobile for numbers that move ~once a
         // second. Reset in setupLevel so the first frame of a new run always paints.
-        let _hudFuelR = -1, _hudHpR = -1, _hudDistTxt = '', _hudTimerTxt = '';
-        function resetHUDCache() { _hudFuelR = -1; _hudHpR = -1; _hudDistTxt = ''; _hudTimerTxt = ''; }
+        let _hudFuelR = -1, _hudHpR = -1, _hudDistTxt = '', _hudTimerTxt = '', _hudSpeedR = -1;
+        function resetHUDCache() { _hudFuelR = -1; _hudHpR = -1; _hudDistTxt = ''; _hudTimerTxt = ''; _hudSpeedR = -1; }
+
+        // Bidi isolation for numbers embedded in Arabic HUD strings. The page is dir="rtl",
+        // so a bare "1200 م | أفضل: 300" mixes strong-LTR digits, strong-RTL words and a
+        // neutral "|" — the Unicode bidi algorithm is then free to reorder the run in ways
+        // that read wrong (the separator drifting between the wrong operands). Wrapping each
+        // number in FSI…PDI pins it as its own isolated run.
+        const bidi = (n) => '\u2068' + n + '\u2069';
+
         function updateHUD() {
             const fuelPct = Math.max(0, (state.fuel / state.maxFuel) * 100);
             const fuelR = Math.round(fuelPct);
             if (fuelR !== _hudFuelR) {
                 fuelFill.style.width = fuelR + '%';
                 fuelFill.style.background = barColor(fuelPct);
+                // Second, colour-independent channel for the same information (item 13).
+                if (fuelNum) {
+                    fuelNum.textContent = fuelR + '%';
+                    fuelNum.classList.toggle('low', fuelPct <= 25);
+                }
                 _hudFuelR = fuelR;
             }
 
@@ -5853,7 +6277,17 @@
                 hpFill.style.background = barColor(hpPct);
                 // Flash the HP bar when death is imminent.
                 if (hpBar) hpBar.classList.toggle('critical', hpPct <= 25 && hpPct > 0);
+                if (hpNum) {
+                    hpNum.textContent = hpR + '%';
+                    hpNum.classList.toggle('low', hpPct <= 25);
+                }
                 _hudHpR = hpR;
+            }
+
+            // Live speed: makes the (now non-trivial) throttle economy legible.
+            if (speedValue) {
+                const spd = Math.round(state.currentSpeed || 0);
+                if (spd !== _hudSpeedR) { speedValue.textContent = spd; _hudSpeedR = spd; }
             }
 
             let distTxt;
@@ -5863,11 +6297,11 @@
                     const d = SaveSystem.data.daily;
                     best = (d && d.date === todaySeedString()) ? (d.best || 0) : 0;
                 }
-                distTxt = `📏 ${Math.floor(state.distance)} م | أفضل${state.daily ? ' اليوم' : ''}: ${best}`;
+                distTxt = `📏 ${bidi(Math.floor(state.distance))} م • أفضل${state.daily ? ' اليوم' : ''}: ${bidi(best)} م`;
             } else {
                 const level = CONFIG.levels[state.currentLevel];
                 const remaining = Math.max(0, Math.floor(level.distance - state.distance));
-                distTxt = `المتبقي: ${remaining} م`;
+                distTxt = `المتبقي: ${bidi(remaining)} م`;
             }
             if (distTxt !== _hudDistTxt) { distanceText.textContent = distTxt; _hudDistTxt = distTxt; }
 
@@ -5887,9 +6321,9 @@
         
         // ============= UPDATE DUST PARTICLES =============
         function updateDustParticles(delta) {
-            if (dustParticles && state.isGrounded) {
-                const positions = dustParticles.geometry.attributes.position.array;
-                const velocities = dustParticles.userData.velocities;
+            if (World.dustParticles && state.isGrounded) {
+                const positions = World.dustParticles.geometry.attributes.position.array;
+                const velocities = World.dustParticles.userData.velocities;
 
                 for (let i = 0; i < positions.length / 3; i++) {
                     const idx = i * 3;
@@ -5906,13 +6340,13 @@
                         velocities[i].z = -Math.random() * 0.8 - 0.2;
                     }
                 }
-                dustParticles.geometry.attributes.position.needsUpdate = true;
+                World.dustParticles.geometry.attributes.position.needsUpdate = true;
             }
 
             // Smoke particles (damage indicator)
-            if (smokeParticles) {
-                const positions = smokeParticles.geometry.attributes.position.array;
-                const velocities = smokeParticles.userData.velocities;
+            if (World.smokeParticles) {
+                const positions = World.smokeParticles.geometry.attributes.position.array;
+                const velocities = World.smokeParticles.userData.velocities;
                 for (let i = 0; i < positions.length / 3; i++) {
                     const idx = i * 3;
                     positions[idx] += velocities[i].x * delta * 30;
@@ -5924,19 +6358,19 @@
                         positions[idx + 2] = Math.random() * 0.5 + 1.5;
                     }
                 }
-                smokeParticles.geometry.attributes.position.needsUpdate = true;
+                World.smokeParticles.geometry.attributes.position.needsUpdate = true;
 
                 // Remove smoke if HP recovered
                 if (state.hp >= state.maxHp * CONFIG.damage.smokeThreshold) {
-                    if (smokeParticles.parent === vehicle) vehicle.remove(smokeParticles);
-                    smokeParticles = null;
+                    if (World.smokeParticles.parent === vehicle) vehicle.remove(World.smokeParticles);
+                    World.smokeParticles = null;
                 }
             }
         }
         
         // ============= UPDATE CLOUDS =============
         function updateClouds(delta) {
-            clouds.forEach(cloudGroup => {
+            World.clouds.forEach(cloudGroup => {
                 const inst = cloudGroup.userData && cloudGroup.userData.cloudInst;
                 if (inst) {
                     // Instanced path: drift each cloud in x (same slow speed + ±500 wrap as
@@ -5978,8 +6412,8 @@
             camera.lookAt(vehicle.position.x, vehicle.position.y + 1.5, vehicle.position.z);
             
             if (progress >= 1) {
-                state.cameraRotating = false;
-                
+                setPhase('over');
+
                 if (state.cameraRotationType === 'levelComplete') {
                     showLevelCompleteScreen();
                 } else if (state.cameraRotationType === 'win') {
@@ -5997,17 +6431,17 @@
         function showLevelCompleteScreen() {
             const level = CONFIG.levels[state.currentLevel];
             completeTitle.textContent = '🎉 أحسنت!';
-            const stars = state.lastEarnedStars || 1;
+            const earnedStars = state.lastEarnedStars || 1;
             completeSubtitle.innerHTML = `وصلت إلى ${level.targetName}!` +
-                `<br><span style="font-size:1.8em;color:#ffd700;letter-spacing:4px;">${starString(stars)}</span>`;
+                `<br><span style="font-size:1.8em;color:#ffd700;letter-spacing:4px;">${starString(earnedStars)}</span>`;
             levelCompleteScreen.style.display = 'flex';
         }
         
         function showWinScreen() {
             if (state.mode === 'timeTrial') {
-                winMessage.innerHTML = `أنجزت السباق!<br>الزمن: ${state.timeElapsed.toFixed(2)} ث`;
+                winMessage.innerHTML = `أنجزت السباق!<br>الزمن: <bdi>${state.timeElapsed.toFixed(2)}</bdi> ث`;
                 const best = SaveSystem.data.timeTrial.bestTimes[state.currentLevel];
-                winBestScore.textContent = best ? `🏆 أفضل زمن: ${best.toFixed(2)} ث` : '';
+                winBestScore.textContent = best ? `🏆 أفضل زمن: \u2068${best.toFixed(2)}\u2069 ث` : '';
             } else if (state.mode === 'story') {
                 winMessage.innerHTML = `وصلت للمخيم الصحراوي بسلام!<br>أنت ناجٍ حقيقي!` +
                     `<br><span style="font-size:1.6em;color:#ffd700;letter-spacing:4px;">${starString(state.lastEarnedStars || 1)}</span>`;
@@ -6030,7 +6464,10 @@
             // Menus and pause don't need 60fps: render every other frame to save
             // battery. The clock keeps accumulating, so cloud drift and the sky
             // stay at the right speed on the frames that do render.
-            if ((!state.isPlaying && !state.cameraRotating) || state.isPaused) {
+            // `cameraRotating` is explicitly EXCLUDED: completeLevel()/gameOver() set
+            // isPaused=true alongside it, which used to drop the victory/defeat camera
+            // orbit — the single most cinematic moment in the game — to ~30fps.
+            if (!state.cameraRotating && ((!state.isPlaying) || state.isPaused)) {
                 idleFrameToggle = !idleFrameToggle;
                 if (idleFrameToggle) return;
             }
@@ -6047,14 +6484,14 @@
 
                 const ct = fxUniforms.uTime.value;
                 const cbob = Math.sin(ct * 3) * 0.15;
-                fuelCans.forEach(can => {
+                World.fuelCans.forEach(can => {
                     can.rotation.y += delta * 2;
                     can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + cbob;
                 });
 
                 const level = CONFIG.levels[state.currentLevel];
-                if (level.timeOfDay === 'night' && stars[0]) {
-                    stars[0].material.opacity = 0.6 + Math.sin(ct * 3) * 0.3;
+                if (level.timeOfDay === 'night' && World.stars[0]) {
+                    World.stars[0].material.opacity = 0.6 + Math.sin(ct * 3) * 0.3;
                 }
 
                 renderFrame(delta);
@@ -6065,7 +6502,17 @@
                 renderFrame(delta);
                 return;
             }
-            
+
+            // Hit stop: hold the world still for a few frames after an impact. Rendering
+            // continues (so the debris burst and camera kick are actually seen), but no
+            // gameplay state advances — including timers, which is deliberate: a freeze
+            // the player didn't ask for must never cost them fuel or time-trial seconds.
+            if (state.hitStop > 0) {
+                state.hitStop -= delta;
+                renderFrame(delta);
+                return;
+            }
+
             const level = CONFIG.levels[state.currentLevel];
 
             // Optional gamepad: sets targetSteering/throttle before they're consumed below.
@@ -6084,9 +6531,12 @@
             const baseSpeed = state.activeVehicle ? state.activeVehicle.stats.topSpeed : CONFIG.vehicle.speed;
             const boostActive = state.boostUntil > state.timeElapsed;
             // Ease the applied throttle toward its target so gas/brake feel like
-            // acceleration rather than an instant speed step.
-            state.throttleApplied += (state.throttle - state.throttleApplied) * Math.min(1, delta * 3);
+            // acceleration rather than an instant speed step. True exponential approach
+            // (1 - e^-kt) rather than the old linear `min(1, delta*k)` approximation,
+            // which drifted noticeably at 30fps.
+            state.throttleApplied += (state.throttle - state.throttleApplied) * (1 - Math.exp(-3 * delta));
             const speed = baseSpeed * (boostActive ? CONFIG.powerups.boostMultiplier : 1.0) * state.throttleApplied;
+            state.currentSpeed = speed;
 
             // Mode-specific tick
             state.timeElapsed += delta;
@@ -6103,6 +6553,7 @@
             // version below.
             if (state.mode !== 'endless' && level.weather === 'sandstorm' && state.timeElapsed >= state.sandstormToggleAt) {
                 state.sandstormActive = !state.sandstormActive;
+                if (state.sandstormActive) maybeHint('storm', '🌪 عاصفة رملية — الرؤية أقصر والتوجيه أثقل حتى تمر');
                 const dur = state.sandstormActive ? (9 + Math.random() * 5) : (8 + Math.random() * 6);
                 state.sandstormToggleAt = state.timeElapsed + dur;
                 updateEffectBadges();
@@ -6112,6 +6563,7 @@
                 // so pausing mid-storm freezes the remaining duration.
                 if (!state.sandstormActive && state.distance > state.endlessSandstormNext) {
                     state.sandstormActive = true;
+                    maybeHint('storm', '🌪 عاصفة رملية — الرؤية أقصر والتوجيه أثقل حتى تمر');
                     state.sandstormUntil = state.timeElapsed + 12;
                     updateEffectBadges();
                 } else if (state.sandstormActive && state.timeElapsed >= state.sandstormUntil) {
@@ -6137,26 +6589,26 @@
                     x = Math.max(-7, Math.min(7, x));
                     state.endlessLastObstacleX = x;
                     const obs = acquireObstacle(z, x);
-                    obstacles.push(obs);
+                    World.obstacles.push(obs);
                     scene.add(obs);
                 }
                 if (rand() < 0.02 * spawnScale) {
                     const z = vehicle.position.z + 200 + rand() * 100;
                     const fc = acquireFuelCan(z);
-                    fuelCans.push(fc);
+                    World.fuelCans.push(fc);
                     scene.add(fc);
                 }
                 if (rand() < 0.012 * spawnScale) {
                     const z = vehicle.position.z + 200 + rand() * 100;
                     const types = ['boost', 'fuel', 'shield'];
                     const p = acquirePowerup(z, types[Math.floor(rand() * 3)]);
-                    powerups.push(p);
+                    World.powerups.push(p);
                     scene.add(p);
                 }
                 // Recycle terrain chunks behind the player
-                terrain.forEach(t => {
+                World.terrain.forEach(t => {
                     if (t.surface.position.z + TERRAIN_CHUNK_SIZE < vehicle.position.z - 50) {
-                        const newZ = t.surface.position.z + terrain.length * TERRAIN_CHUNK_SIZE;
+                        const newZ = t.surface.position.z + World.terrain.length * TERRAIN_CHUNK_SIZE;
                         t.surface.position.z = newZ;
                         t.base.position.z = newZ;
                         // Recompute heights (+ crest/valley vertex shading)
@@ -6184,31 +6636,44 @@
                 // Cleanup off-screen obstacles/fuel/powerups — recycle into pools
                 // instead of discarding, so geometry/materials are reused next spawn.
                 const cutoff = vehicle.position.z - 30;
-                for (let i = obstacles.length - 1; i >= 0; i--) {
-                    if (obstacles[i].position.z < cutoff) {
-                        scene.remove(obstacles[i]);
-                        obstaclePool.push(obstacles[i]);
-                        obstacles.splice(i, 1);
+                for (let i = World.obstacles.length - 1; i >= 0; i--) {
+                    if (World.obstacles[i].position.z < cutoff) {
+                        scene.remove(World.obstacles[i]);
+                        obstaclePool.push(World.obstacles[i]);
+                        World.obstacles.splice(i, 1);
                     }
                 }
-                for (let i = fuelCans.length - 1; i >= 0; i--) {
-                    if (fuelCans[i].position.z < cutoff) {
-                        scene.remove(fuelCans[i]);
-                        fuelCanPool.push(fuelCans[i]);
-                        fuelCans.splice(i, 1);
+                for (let i = World.fuelCans.length - 1; i >= 0; i--) {
+                    if (World.fuelCans[i].position.z < cutoff) {
+                        scene.remove(World.fuelCans[i]);
+                        fuelCanPool.push(World.fuelCans[i]);
+                        World.fuelCans.splice(i, 1);
                     }
                 }
-                for (let i = powerups.length - 1; i >= 0; i--) {
-                    if (powerups[i].position.z < cutoff) {
-                        scene.remove(powerups[i]);
-                        powerupPool.push(powerups[i]);
-                        powerups.splice(i, 1);
+                for (let i = World.powerups.length - 1; i >= 0; i--) {
+                    if (World.powerups[i].position.z < cutoff) {
+                        scene.remove(World.powerups[i]);
+                        powerupPool.push(World.powerups[i]);
+                        World.powerups.splice(i, 1);
                     }
                 }
             }
 
             vehicle.position.z += speed * delta;
             state.distance = vehicle.position.z;
+
+            // Bank the mid-route checkpoint the first time the car passes it.
+            if (state.checkpointZ !== null && !state.checkpointSnapshot && state.distance >= state.checkpointZ) {
+                bankCheckpoint();
+            }
+
+            // First-time contextual hints. Scanned ~4x/second rather than per frame — the
+            // scan is O(spawned objects) and nothing here changes between frames.
+            hintScanAccum += delta;
+            if (hintScanAccum >= 0.25) {
+                hintScanAccum = 0;
+                scanForHints();
+            }
 
             vehicle.position.x += effSteering * speed * delta;
             vehicle.position.x = Math.max(-25, Math.min(25, vehicle.position.x));
@@ -6226,11 +6691,23 @@
                 }
             } else {
                 const heightDiff = targetHeight - state.vehicleY;
-                state.vehicleY += heightDiff * CONFIG.vehicle.terrainFollowSpeed;
+                // Frame-rate-independent terrain follow. `terrainFollowSpeed` is the
+                // retention per 60fps frame; raising it to the power of (delta*60) makes the
+                // car conform to the ground at the SAME rate in wall-clock seconds on a
+                // 30Hz, 60Hz or 144Hz display. The old per-frame form made a 144Hz screen
+                // hug the terrain 2.4x harder than a 60Hz one.
+                const follow = 1 - Math.pow(1 - CONFIG.vehicle.terrainFollowSpeed, delta * 60);
+                state.vehicleY += heightDiff * follow;
 
                 // Only launch on a sharp drop; rolling-hill descents are followed smoothly
                 // (the car bobs with the terrain instead of hopping constantly).
-                if (heightDiff < -0.7) {
+                // The test is on the drop RATE (units/second), not on the per-frame
+                // height delta: the latter shrinks with the frame time, so the old
+                // `heightDiff < -0.7` fired constantly at 30fps and almost never at 144fps
+                // — i.e. jumping over obstacles (a real mechanic, see checkCollisions)
+                // existed or didn't purely as a function of the player's refresh rate.
+                const dropRate = heightDiff / Math.max(delta, 1e-4);
+                if (dropRate < CONFIG.vehicle.launchDropRate) {
                     state.isGrounded = false;
                     state.vehicleVelocityY = 0;
                 }
@@ -6270,7 +6747,7 @@
 
             // Smooth the camera height so it lags the vehicle slightly: the car visibly
             // rises and dips within the frame instead of the whole view moving rigidly.
-            state.cameraY += ((vehicle.position.y + 7) - state.cameraY) * Math.min(1, delta * 6);
+            state.cameraY += ((vehicle.position.y + 7) - state.cameraY) * (1 - Math.exp(-6 * delta));
             camera.position.x = vehicle.position.x * 0.3;
             camera.position.y = state.cameraY;
             camera.position.z = vehicle.position.z - 14;
@@ -6281,7 +6758,7 @@
             // never affects gameplay positions or the aim point.
             state.shake *= Math.pow(0.02, delta);
             if (state.shake < 0.001) state.shake = 0;
-            const shakeAmt = state.shake + (state.sandstormActive ? 0.05 : 0);
+            const shakeAmt = reduceMotionOn() ? 0 : (state.shake + (state.sandstormActive ? 0.05 : 0));
             if (shakeAmt > 0) {
                 camera.position.x += (Math.random() - 0.5) * shakeAmt;
                 camera.position.y += (Math.random() - 0.5) * shakeAmt;
@@ -6296,16 +6773,16 @@
             }
 
             // Move mountains and clouds with camera (parallax)
-            mountains.forEach(m => {
+            World.mountains.forEach(m => {
                 m.position.z = vehicle.position.z;
             });
-            clouds.forEach(c => {
+            World.clouds.forEach(c => {
                 c.position.z = vehicle.position.z;
             });
             // Star field (built around the origin) + moon follow the car too, else the
             // night sky empties out and the car drives past the moon mid-level. Each
             // object keeps its spawn-time forward offset (0 for the field, 300 for moon).
-            stars.forEach(s => {
+            World.stars.forEach(s => {
                 s.position.z = vehicle.position.z + (s.userData.followZ || 0);
             });
 
@@ -6313,8 +6790,8 @@
             // is still beyond the fog: it can't be seen, so skip drawing it for most of the
             // level. It fades in normally as the car closes in (and stays visible for the
             // victory camera orbit, which happens well within fogFar).
-            if (goalMarker) {
-                goalMarker.visible = (goalMarker.position.z - vehicle.position.z) < level.fogFar + 20;
+            if (World.goalMarker) {
+                World.goalMarker.visible = (World.goalMarker.position.z - vehicle.position.z) < level.fogFar + 20;
             }
 
             // Cinematic sandstorm: close the fog in and tint it dusty tan while a storm is
@@ -6348,7 +6825,7 @@
                 const dz = obj.position.z - vehicle.position.z;
                 return dz < visZFar && dz > visZNear;
             };
-            fuelCans.forEach(can => {
+            World.fuelCans.forEach(can => {
                 if (!animateItem(can)) return;
                 can.rotation.y += delta * 2;
                 can.position.y = getTerrainHeight(can.position.x, can.position.z) + 0.4 + bob;
@@ -6359,7 +6836,7 @@
 
             // Animate powerups
             const pBob = Math.sin(t * 4) * 0.2;
-            powerups.forEach(p => {
+            World.powerups.forEach(p => {
                 if (!animateItem(p)) return;
                 p.rotation.y += delta * 1.5;
                 if (p.innerMesh) p.innerMesh.rotation.x += delta * 2.5;
@@ -6369,14 +6846,24 @@
                 }
             });
 
-            if (level.timeOfDay === 'night' && stars[0]) {
-                stars[0].material.opacity = 0.6 + Math.sin(t * 3) * 0.3;
+            if (level.timeOfDay === 'night' && World.stars[0]) {
+                World.stars[0].material.opacity = 0.6 + Math.sin(t * 3) * 0.3;
             }
 
             const fuelEff = state.activeVehicle ? state.activeVehicle.stats.fuelEfficiency : 1.0;
-            // Fuel burn scales with the applied throttle: flooring it is faster but thirstier,
-            // braking sips fuel — a real tactical trade-off (speed vs range/reaction time).
-            state.fuel -= level.fuelConsumption * fuelEff * state.throttleApplied * delta * 60;
+            // Fuel burn vs throttle — see CONFIG.vehicle.throttleFuelExp.
+            //
+            // The burn used to be LINEAR in throttle, which meant throttle cancelled out of
+            // distance-per-fuel completely:
+            //     speed = base*throttle,  burn = c*throttle  ->  speed/burn = base/c
+            // i.e. "hold gas forever" was strictly free and braking bought nothing. Now the
+            // burn is `idle + (1-idle)*throttle^exp` with idle = 1 - 1/exp, which makes
+            // distance-per-fuel peak EXACTLY at cruise (throttle = 1.0): flooring costs
+            // real range, and crawling wastes fuel idling instead of being a range exploit.
+            // Cruise is still the 1.0 reference, so level fuel budgets are unaffected.
+            const tExp = CONFIG.vehicle.throttleFuelExp;
+            const throttleBurn = (1 - 1 / tExp) + (1 / tExp) * Math.pow(state.throttleApplied, tExp);
+            state.fuel -= level.fuelConsumption * fuelEff * throttleBurn * delta * 60;
 
             // Low-fuel audio alert (fires once as fuel first crosses below 20%; re-armed if
             // a pickup lifts it back above the threshold, so it warns again on the next dip).
@@ -6422,12 +6909,8 @@
         
         // ============= LEVEL COMPLETION =============
         function completeLevel() {
-            state.isPaused = true;
-            audio.stopEngine();
+            setPhase('cinematic');
             audio.playCelebration();
-            hud.style.display = 'none';
-            pauseBtn.style.display = 'none';
-            if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
 
             // Save best times + unlock achievements
             const lvl = state.currentLevel;
@@ -6450,7 +6933,8 @@
                 }
                 if (lvl === 0) unlockAchievement('first_level');
                 // Star rating (1–3): finish + clean run + par time. Keep the best ever earned.
-                const earned = computeStars(state.damageTakenThisLevel, time, starParSeconds(CONFIG.levels[lvl].distance));
+                const parSpeed = state.activeVehicle ? state.activeVehicle.stats.topSpeed : CONFIG.vehicle.speed;
+                const earned = computeStars(state.damageTakenThisLevel, time, starParSeconds(CONFIG.levels[lvl].distance, parSpeed));
                 state.lastEarnedStars = earned;
                 if (earned > (SaveSystem.data.campaign.stars[lvl] || 0)) {
                     SaveSystem.data.campaign.stars[lvl] = earned;
@@ -6463,7 +6947,6 @@
                 SaveSystem.save();
             }
 
-            state.cameraRotating = true;
             state.cameraRotationStart = Date.now();
 
             const isLastStoryLevel = state.mode === 'story' && state.currentLevel >= CONFIG.levels.length - 1;
@@ -6479,12 +6962,8 @@
 
         // ============= GAME OVER =============
         function gameOver(won, reason) {
-            state.isPaused = true;
-            audio.stopEngine();
+            setPhase('cinematic');
             audio.stopMusic();
-            hud.style.display = 'none';
-            pauseBtn.style.display = 'none';
-            if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
 
             // Save endless best
             if (state.mode === 'endless') {
@@ -6517,39 +6996,223 @@
                 endMessage.textContent = 'لم تستطع الوصول في الوقت المناسب.';
             }
 
+            // Offer the mid-route checkpoint only when one was actually banked this run,
+            // and the daily share only after a daily run.
+            if (resumeCheckpointBtn) {
+                resumeCheckpointBtn.style.display = state.checkpointSnapshot ? 'block' : 'none';
+            }
+            if (shareScoreBtn) {
+                shareScoreBtn.style.display = state.daily ? 'block' : 'none';
+            }
+
             if (!won) {
                 audio.playDefeat();
-                state.cameraRotating = true;
                 state.cameraRotationStart = Date.now();
                 state.cameraRotationType = 'lose';
             }
         }
 
-        // ============= ENTER PLAY STATE (shared) =============
-        // The three ways into active gameplay — a fresh run (beginRun), a retry
-        // (restartGame) and advancing a level (goToNextLevel) — used to each open-code
-        // the same "show HUD + controls + start audio" ritual, and they had DRIFTED:
-        // only beginRun started the music, so the ambient pad went silent forever after
-        // the first game-over/next-level. Centralising it here fixes that and stops the
-        // three paths diverging again.
-        function enterPlayState() {
-            hud.style.display = 'flex';
-            pauseBtn.style.display = 'flex';
-            if (steerButtonsEl && isTouchDevice) steerButtonsEl.classList.add('visible');
-            audio.startEngine();
-            audio.startMusic();
+        // ============= LEVEL BUILD LOADER (item 12) =============
+        // setupLevel() is a long synchronous burst (terrain chunks, the goal structure,
+        // obstacles, decorations) followed by a first frame that compiles every new shader.
+        // On a mid-range phone that reads as the app hanging. Paint an overlay FIRST, let
+        // the browser actually present it (two rAFs — one to flush the style change, one to
+        // guarantee the paint), and only then do the work. Fully synchronous fallback if
+        // rAF is unavailable, so a build can never be skipped.
+        let _levelBuildPending = false;
+        function buildLevelWithLoader(work) {
+            if (_levelBuildPending) return;
+            const finish = () => {
+                try { work(); }
+                finally {
+                    _levelBuildPending = false;
+                    if (loadingOverlay) loadingOverlay.style.display = 'none';
+                }
+            };
+            if (!loadingOverlay || typeof requestAnimationFrame !== 'function') { finish(); return; }
+            _levelBuildPending = true;
+            loadingOverlay.style.display = 'flex';
+            requestAnimationFrame(() => requestAnimationFrame(finish));
+        }
+
+        // ============= CONTEXTUAL FIRST-TIME HINTS (item 14) =============
+        // The tutorial was a single nine-bullet wall of text shown once, before the player
+        // had any referent for what a "shield" or a "fuel doubler" is. These fire the FIRST
+        // time each thing is actually about to matter, one line at a time, and are
+        // remembered forever in the save.
+        let hintTimer = 0, hintScanAccum = 0;
+        function maybeHint(id, text) {
+            try {
+                if (!hintToast || !SaveSystem.data) return;
+                const seen = SaveSystem.data.hintsSeen;
+                if (seen[id]) return;
+                seen[id] = true;
+                SaveSystem.save();
+                hintToast.textContent = text;
+                hintToast.style.display = 'block';
+                clearTimeout(hintTimer);
+                hintTimer = setTimeout(() => { hintToast.style.display = 'none'; }, 4200);
+            } catch (e) { /* hints are cosmetic */ }
+        }
+        const HINT_RANGE = 70;   // metres ahead: far enough to read before it arrives
+        function scanForHints() {
+            if (!SaveSystem.data) return;
+            const seen = SaveSystem.data.hintsSeen;
+            const z = vehicle.position.z;
+            const near = (arr, pred) => arr.some(o => {
+                const dz = o.position.z - z;
+                return dz > 0 && dz < HINT_RANGE && (!pred || pred(o));
+            });
+            if (!seen.fuelCan && near(World.fuelCans)) {
+                maybeHint('fuelCan', '⛽ علبة وقود أمامك — التقطها: +10 وقود و+5 صحة');
+            }
+            if (!seen.obstacle && near(World.obstacles)) {
+                maybeHint('obstacle', '🪨 عقبة أمامك — انحرف يميناً أو يساراً لتفاديها');
+            }
+            if (!seen.pwBoost && near(World.powerups, o => o.userData.powerupType === 'boost')) {
+                maybeHint('pwBoost', '⚡ تعزيز السرعة — سرعة ١.٥× لمدة ٥ ثوانٍ');
+            }
+            if (!seen.pwShield && near(World.powerups, o => o.userData.powerupType === 'shield')) {
+                maybeHint('pwShield', '🛡️ درع — يمتص الاصطدام التالي بالكامل');
+            }
+            if (!seen.pwFuel && near(World.powerups, o => o.userData.powerupType === 'fuel')) {
+                maybeHint('pwFuel', '⛽⛽ مضاعف الوقود — العلبة التالية تعطيك +20 بدل +10');
+            }
+        }
+
+        // ============= MID-ROUTE CHECKPOINT (item 19) =============
+        // Only on the long routes, where losing the whole run to a late mistake is the
+        // difference between "one more go" and closing the tab.
+        const CHECKPOINT_MIN_DISTANCE = 1000;
+        function checkpointZFor(level, isEndless) {
+            if (isEndless || !level || level.distance <= CHECKPOINT_MIN_DISTANCE) return null;
+            return level.distance * 0.5;
+        }
+        function bankCheckpoint() {
+            state.checkpointSnapshot = {
+                z: vehicle.position.z,
+                fuel: state.fuel,
+                hp: state.hp,
+                timeElapsed: state.timeElapsed,
+                timeRemaining: state.timeRemaining,
+                fuelCansCollected: state.fuelCansCollected
+            };
+            maybeHint('checkpoint', '🚩 نقطة تفتيش — لو خسرت تستطيع المتابعة من هنا');
+            if (hintToast && SaveSystem.data.hintsSeen.checkpoint) {
+                // Already explained once: still confirm the bank, briefly.
+                hintToast.textContent = '🚩 نقطة تفتيش محفوظة';
+                hintToast.style.display = 'block';
+                clearTimeout(hintTimer);
+                hintTimer = setTimeout(() => { hintToast.style.display = 'none'; }, 1800);
+            }
+            audio.playFuelPickup();
+        }
+        // Re-enter the level at the banked point. setupLevel() re-randomises the layout
+        // ahead (the run was never seeded outside the daily challenge), then this moves the
+        // car and restores the resources it had. The clean-run star is forfeited: the
+        // player did crash.
+        function restoreCheckpoint(snap) {
+            state.distance = snap.z;
+            vehicle.position.z = snap.z;
+            state.vehicleY = getTerrainHeight(vehicle.position.x, snap.z) + CONFIG.vehicle.groundOffset;
+            state.isGrounded = true;
+            state.vehicleVelocityY = 0;
+            vehicle.position.y = state.vehicleY;
+            state.cameraY = state.vehicleY + 7;
+            state.fuel = Math.min(state.maxFuel, snap.fuel);
+            state.hp = Math.min(state.maxHp, snap.hp);
+            state.timeElapsed = snap.timeElapsed;
+            if (state.mode === 'timeTrial') state.timeRemaining = snap.timeRemaining;
+            state.fuelCansCollected = snap.fuelCansCollected;
+            state.damageTakenThisLevel = true;
+            state.lastCollisionTime = -999;
+            state.checkpointSnapshot = snap;   // setupLevel cleared it; keep it re-usable
+            camera.position.z = snap.z - 14;
+            resetHUDCache();
+            updateHUD();
+        }
+
+        // ============= SHARE A DAILY RESULT (item 16) =============
+        // The daily seed is identical for everyone worldwide, which is only interesting if
+        // a result can leave the device. No server needed — the OS share sheet is enough.
+        function shareDailyScore() {
+            const dist = Math.floor(state.distance);
+            const text = `🏜️ النجاة في الصحراء — التحدي اليومي (${todaySeedString()})\nقطعت ${dist} متراً. تقدر تتجاوزني؟`;
+            const url = location.origin + location.pathname;
+            try {
+                if (navigator.share) {
+                    navigator.share({ title: 'النجاة في الصحراء', text, url }).catch(() => {});
+                    return;
+                }
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text + '\n' + url).then(() => {
+                        shareScoreBtn.textContent = '✓ نُسخت النتيجة';
+                        setTimeout(() => { shareScoreBtn.textContent = '📤 شارك نتيجتك'; }, 2000);
+                    }).catch(() => {});
+                }
+            } catch (e) { /* sharing is optional */ }
+        }
+
+        // ============= GAME PHASE MACHINE =============
+        // The game used to have no explicit state machine: which screen you were on was
+        // encoded implicitly in the CROSS PRODUCT of three independent booleans
+        // (isPlaying / isPaused / cameraRotating) written from a dozen places, plus manual
+        // show/hide of half a dozen DOM nodes. Illegal combinations were representable and
+        // did occur — the victory camera orbit ran with isPaused=true, which silently
+        // dropped the most cinematic moment in the game to half frame rate, and the
+        // game-over screen left isPlaying=true, so Esc still toggled "pause" over it.
+        //
+        // Now there is ONE authoritative value, `state.phase`, and exactly one function
+        // that writes it. The three legacy booleans are still derived here (they're read in
+        // ~30 places and read-only elsewhere), so they can no longer disagree with it.
+        //
+        //   menu       main menu / selection modals — world renders idle at half rate
+        //   playing    active gameplay
+        //   paused     pause menu up, world frozen
+        //   cinematic  victory / defeat camera orbit — full frame rate, no input
+        //   over       result screen (win / level complete / game over)
+        //
+        // Centralising the "show HUD + controls + start audio" ritual also fixes a real
+        // drift bug it inherited: only beginRun used to start the music, so the ambient pad
+        // went silent forever after the first game-over or next-level transition.
+        const PHASES = {
+            menu:      { isPlaying: false, isPaused: false, cameraRotating: false, hud: false, audio: 'off' },
+            playing:   { isPlaying: true,  isPaused: false, cameraRotating: false, hud: true,  audio: 'on'  },
+            paused:    { isPlaying: true,  isPaused: true,  cameraRotating: false, hud: true,  audio: 'quiet' },
+            cinematic: { isPlaying: true,  isPaused: true,  cameraRotating: true,  hud: false, audio: 'quiet' },
+            over:      { isPlaying: false, isPaused: false, cameraRotating: false, hud: false, audio: 'off' },
+        };
+        function setPhase(phase) {
+            const p = PHASES[phase];
+            if (!p) return;
+            state.phase = phase;
+            state.isPlaying = p.isPlaying;
+            state.isPaused = p.isPaused;
+            state.cameraRotating = p.cameraRotating;
+
+            hud.style.display = p.hud ? 'flex' : 'none';
+            pauseBtn.style.display = p.hud ? 'flex' : 'none';
+            if (muteBtn) { muteBtn.style.display = p.hud ? 'flex' : 'none'; syncMuteButton(); }
+            if (steerButtonsEl) {
+                steerButtonsEl.classList.toggle('visible', !!(p.hud && isTouchDevice && phase === 'playing'));
+            }
+
+            if (p.audio === 'on') { audio.startEngine(); audio.startMusic(); }
+            else if (p.audio === 'quiet') { audio.stopEngine(); }
+            else { audio.stopEngine(); audio.stopMusic(); }
         }
 
         // ============= GO TO NEXT LEVEL =============
         function goToNextLevel() {
             levelCompleteScreen.style.display = 'none';
             state.currentLevel++;
-            state.isPlaying = true;
-            state.isPaused = false;
-            state.cameraRotating = false;
-
-            setupLevel();
-            enterPlayState();
+            // isPlaying is flipped INSIDE the deferred build (see buildLevelWithLoader),
+            // never before it: otherwise gameLoop would advance the car through the
+            // previous level for the two frames the loader is on screen.
+            buildLevelWithLoader(() => {
+                setupLevel();
+                setPhase('playing');
+            });
         }
 
         // ============= START GAME =============
@@ -6572,25 +7235,26 @@
             audio.init();
             applyVolumeFromSettings();
 
-            state.isPlaying = true;
-            state.isPaused = false;
-            state.cameraRotating = false;
-
             // The daily challenge plays as endless but with a date-seeded spawn stream.
             state.daily = (state.pendingMode === 'daily');
             state.mode = state.daily ? 'endless' : state.pendingMode;
             state.currentLevel = state.pendingLevel;
-            rebuildVehicle(state.pendingVehicleId);
 
-            setupLevel();
-            clock.start();
-            enterPlayState();
-
-            setTimeout(() => { touchHint.style.display = 'none'; }, 5000);
+            buildLevelWithLoader(() => {
+                rebuildVehicle(state.pendingVehicleId);
+                setupLevel();
+                clock.start();
+                setPhase('playing');
+                setTimeout(() => { touchHint.style.display = 'none'; }, 5000);
+            });
         }
 
         // ============= RESTART (same mode/level/vehicle) =============
-        function restartGame() {
+        // `fromCheckpoint` re-enters at the banked mid-route snapshot instead of at zero.
+        function restartGame(fromCheckpoint) {
+            // Capture BEFORE setupLevel(), which clears the snapshot for the new run.
+            const snap = (fromCheckpoint === true) ? state.checkpointSnapshot : null;
+
             endScreen.style.display = 'none';
             winScreen.style.display = 'none';
             levelCompleteScreen.style.display = 'none';
@@ -6599,15 +7263,13 @@
             // previously reset to pendingLevel — the level chosen at session start —
             // so dying on level 4 after starting at level 1 threw the player back
             // to level 1 and lost the in-session progress.)
-            state.isPlaying = true;
-            state.isPaused = false;
-            state.cameraRotating = false;
-
-            clock.stop();
-            clock.start();
-
-            setupLevel();
-            enterPlayState();
+            buildLevelWithLoader(() => {
+                clock.stop();
+                clock.start();
+                setupLevel();
+                if (snap) restoreCheckpoint(snap);
+                setPhase('playing');
+            });
         }
 
         // ============= "Play Again" from win screen =============
@@ -6627,35 +7289,54 @@
             winScreen.style.display = 'none';
             levelCompleteScreen.style.display = 'none';
             pauseMenu.style.display = 'none';
-            hud.style.display = 'none';
-            pauseBtn.style.display = 'none';
-            if (steerButtonsEl) steerButtonsEl.classList.remove('visible');
             startScreen.style.display = 'flex';
-            state.isPlaying = false;
-            state.isPaused = false;
-            state.cameraRotating = false;
-            audio.stopEngine();
-            audio.stopMusic();
+            setPhase('menu');
         }
 
         // ============= PAUSE =============
         function togglePause() {
-            if (!state.isPlaying || state.cameraRotating) return;
-            state.isPaused = !state.isPaused;
-            if (state.isPaused) {
+            if (state.phase !== 'playing' && state.phase !== 'paused') return;
+            if (state.phase === 'playing') {
+                setPhase('paused');
                 pauseMenu.style.display = 'flex';
-                audio.stopEngine();
             } else {
                 pauseMenu.style.display = 'none';
                 settingsMenu.style.display = 'none';
-                audio.startEngine();
+                setPhase('playing');
             }
         }
 
         // ============= SETTINGS =============
         function applyVolumeFromSettings() {
             if (!audio.masterGain || !SaveSystem.data) return;
-            audio.masterGain.gain.value = SaveSystem.data.settings.volume * 0.6;
+            const st = SaveSystem.data.settings;
+            audio.masterGain.gain.value = st.muted ? 0 : st.volume * 0.6;
+        }
+
+        // One-tap mute (item 13). Kept separate from the volume slider so muting and
+        // un-muting restores the player's chosen level rather than zeroing it.
+        function syncMuteButton() {
+            if (!muteBtn || !SaveSystem.data) return;
+            const m = SaveSystem.data.settings.muted;
+            muteBtn.textContent = m ? '🔇' : '🔊';
+            muteBtn.classList.toggle('muted', m);
+            muteBtn.setAttribute('aria-label', m ? 'إلغاء الكتم' : 'كتم الصوت');
+        }
+        function toggleMute() {
+            if (!SaveSystem.data) return;
+            SaveSystem.data.settings.muted = !SaveSystem.data.settings.muted;
+            SaveSystem.save();
+            applyVolumeFromSettings();
+            syncMuteButton();
+        }
+
+        // Reduced motion (item 13): mirror the in-game toggle onto <body> so the CSS
+        // override applies, exactly like the OS-level @media block.
+        function applyReduceMotionFromSettings() {
+            try {
+                document.body.classList.toggle('reduce-motion',
+                    !!(SaveSystem.data && SaveSystem.data.settings.reduceMotion));
+            } catch (e) { /* non-fatal */ }
         }
 
         // Toggle the shadow map, recompiling materials so the change actually takes effect.
@@ -6787,16 +7468,24 @@
                 const card = document.createElement('div');
                 card.className = 'selection-card' + (state.pendingVehicleId === v.id ? ' selected' : '');
                 const s = v.stats;
-                const max = { fuel: 150, hp: 150, speed: 25, durability: 1.5 };
+                const max = { fuel: 150, hp: 150, speed: 25, durability: 1.5, range: 2000 };
+                // Range is the stat the rebalance actually turns on (see VEHICLES), and it
+                // isn't readable from tank size alone — burn is per-second, so it's
+                // topSpeed / fuelEfficiency * fuelCapacity. Show it explicitly, or the
+                // armour-vs-range trade is invisible at the moment of choosing.
+                const range = (s.topSpeed / s.fuelEfficiency) * s.fuelCapacity;
+                const bar = (label, frac) =>
+                    `<div class="stat-bar-row"><span class="stat-bar-label">${label}</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${Math.max(0, Math.min(100, frac * 100))}%"></div></div></div>`;
                 card.innerHTML = `
                     <div class="selection-icon">${v.icon}</div>
                     <div class="selection-name">${v.name}</div>
                     <div class="selection-desc">${v.description}</div>
                     <div class="stat-bars">
-                        <div class="stat-bar-row"><span class="stat-bar-label">سرعة</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(s.topSpeed/max.speed)*100}%"></div></div></div>
-                        <div class="stat-bar-row"><span class="stat-bar-label">صحة</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(s.maxHp/max.hp)*100}%"></div></div></div>
-                        <div class="stat-bar-row"><span class="stat-bar-label">وقود</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(s.fuelCapacity/max.fuel)*100}%"></div></div></div>
-                        <div class="stat-bar-row"><span class="stat-bar-label">تحمّل</span><div class="stat-bar-track"><div class="stat-bar-fill" style="width:${(s.durability/max.durability)*100}%"></div></div></div>
+                        ${bar('سرعة', s.topSpeed / max.speed)}
+                        ${bar('مدى', range / max.range)}
+                        ${bar('صحة', s.maxHp / max.hp)}
+                        ${bar('خزان', s.fuelCapacity / max.fuel)}
+                        ${bar('تحمّل', s.durability / max.durability)}
                     </div>
                 `;
                 card.addEventListener('click', () => {
@@ -6867,6 +7556,9 @@
             const sensV = document.getElementById('sensitivityValue');
             const qual = document.getElementById('qualitySelect');
             const vib = document.getElementById('vibrationToggle');
+            const rm = document.getElementById('reduceMotionToggle');
+            rm.classList.toggle('active', s.reduceMotion);
+            rm.textContent = s.reduceMotion ? 'مفعّل' : 'مغلق';
             vol.value = Math.round(s.volume * 100);
             volV.textContent = vol.value + '%';
             sens.value = Math.round(s.sensitivity * 100);
@@ -6934,7 +7626,6 @@
         });
         document.getElementById('pauseRestartBtn').addEventListener('click', () => {
             hideModal(pauseMenu);
-            state.isPaused = false;
             restartGame();
         });
         document.getElementById('pauseQuitBtn').addEventListener('click', quitToMenu);
@@ -6970,10 +7661,20 @@
             e.target.textContent = SaveSystem.data.settings.vibration ? 'مفعّل' : 'مغلق';
             SaveSystem.save();
         });
+        document.getElementById('reduceMotionToggle').addEventListener('click', (e) => {
+            SaveSystem.data.settings.reduceMotion = !SaveSystem.data.settings.reduceMotion;
+            e.target.classList.toggle('active', SaveSystem.data.settings.reduceMotion);
+            e.target.textContent = SaveSystem.data.settings.reduceMotion ? 'مفعّل' : 'مغلق';
+            applyReduceMotionFromSettings();
+            SaveSystem.save();
+        });
         document.getElementById('resetSaveBtn').addEventListener('click', () => {
             if (confirm('هل أنت متأكد من مسح كل التقدم؟')) {
                 SaveSystem.reset();
                 syncSettingsUI();
+                applyReduceMotionFromSettings();
+                applyVolumeFromSettings();
+                syncMuteButton();
                 alert('تم مسح التقدم');
             }
         });
@@ -6992,7 +7693,12 @@
 
         // Existing end-screen buttons
         nextLevelBtn.addEventListener('click', goToNextLevel);
-        retryBtn.addEventListener('click', restartGame);
+        // Note the arrow wrappers: a bare listener reference would pass the click Event as
+        // restartGame's `fromCheckpoint` argument.
+        retryBtn.addEventListener('click', () => restartGame(false));
+        resumeCheckpointBtn.addEventListener('click', () => restartGame(true));
+        shareScoreBtn.addEventListener('click', shareDailyScore);
+        muteBtn.addEventListener('click', toggleMute);
         playAgainBtn.addEventListener('click', playAgain);
 
         // ============= INITIALIZE =============
@@ -7014,6 +7720,8 @@
             initGame();
             diag('5: applyQualityFromSettings');
             applyQualityFromSettings();
+            applyReduceMotionFromSettings();
+            syncMuteButton();
             diag('6: setupControls');
             setupControls();
             setupDiagnostics();
@@ -7025,12 +7733,41 @@
             }
             diag('9: DONE');
         } catch (initErr) {
+            console.error('Init failed:', initErr);
             const div = document.getElementById('errorDisplay');
-            if (div) {
+            if (div && window.__gameDebug) {
                 div.style.display = 'block';
                 div.textContent = '⚠ Init failed at step: ' + (div.dataset.step || '?') + '\n' + initErr.message + '\n' + (initErr.stack || '');
+            } else {
+                // Players get a readable, actionable message in their own language rather
+                // than a stack trace. (With the save-corruption fix above this path should
+                // now be unreachable, but a hard failure must never be a blank screen.)
+                try {
+                    const el = document.createElement('div');
+                    el.setAttribute('role', 'alert');
+                    el.style.cssText = 'position:fixed;inset:0;z-index:4000;display:flex;flex-direction:column;' +
+                        'justify-content:center;align-items:center;gap:18px;text-align:center;padding:24px;' +
+                        'background:linear-gradient(180deg,#1a0f00,#3d2810);color:#fff;font-family:inherit;';
+                    el.innerHTML = '<div style="font-size:2rem;">⚠️ تعذّر تشغيل اللعبة</div>' +
+                        '<div style="font-size:1.05rem;color:#d4a574;max-width:460px;line-height:1.8;">' +
+                        'حدث خطأ غير متوقع أثناء التحميل. جرّب إعادة التشغيل — وإن تكرر، ' +
+                        'فإعادة الضبط تمسح التقدم المحفوظ وتعيد اللعبة للعمل.</div>';
+                    const reload = document.createElement('button');
+                    reload.className = 'start-btn';
+                    reload.textContent = '🔄 إعادة التشغيل';
+                    reload.addEventListener('click', () => location.reload());
+                    const wipe = document.createElement('button');
+                    wipe.className = 'modal-btn secondary';
+                    wipe.textContent = '🗑 إعادة الضبط ومسح التقدم';
+                    wipe.addEventListener('click', () => {
+                        try { localStorage.removeItem(SAVE_KEY); } catch (e) {}
+                        location.reload();
+                    });
+                    el.appendChild(reload);
+                    el.appendChild(wipe);
+                    document.body.appendChild(el);
+                } catch (e2) { /* nothing more we can do */ }
             }
-            console.error('Init failed:', initErr);
         }
     </script>
 

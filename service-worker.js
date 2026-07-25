@@ -1,5 +1,5 @@
 /* Service Worker for "النجاة في الصحراء" PWA */
-const CACHE_VERSION = 'v5';
+const CACHE_VERSION = 'v6';
 const STATIC_CACHE = `desert-survival-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `desert-survival-runtime-${CACHE_VERSION}`;
 
@@ -27,6 +27,10 @@ const CDN_OPTIONAL = [
   THREE_BASE + 'examples/jsm/postprocessing/SMAAPass.js',
   THREE_BASE + 'examples/jsm/postprocessing/OutputPass.js',
   THREE_BASE + 'examples/jsm/loaders/GLTFLoader.js',
+  // Used by optimizeStaticGroup() in index.html to batch each procedural vehicle's ~250
+  // separate meshes down to a handful of draw calls. Progressive enhancement like the
+  // rest: without it the vehicles simply render unmerged.
+  THREE_BASE + 'examples/jsm/utils/BufferGeometryUtils.js',
 ];
 
 // Same-origin optional assets: also progressive enhancement (the procedural camel is the
@@ -123,7 +127,13 @@ self.addEventListener('fetch', (event) => {
       caches.open(RUNTIME_CACHE).then((cache) => {
         const fetchPromise = fetch(req)
           .then((res) => {
-            if (res && (res.ok || res.type === 'opaque')) {
+            // Only cache a genuinely OK response. Opaque responses were also being
+            // stored, and an opaque body can just as easily be a CDN 404/5xx page — once
+            // written it is served forever offline as if it were the module, permanently
+            // breaking post-processing/GLTF loading with no way for the page to tell.
+            // Every cross-origin request here is a CORS-enabled ES module, so a valid
+            // response is never opaque and nothing is lost by refusing them.
+            if (res && res.ok && res.type !== 'opaque') {
               cache.put(req, res.clone());
             }
             return res;
