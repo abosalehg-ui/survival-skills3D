@@ -1,5 +1,5 @@
 /* Service Worker for "النجاة في الصحراء" PWA */
-const CACHE_VERSION = 'v6';
+const CACHE_VERSION = 'v7';
 const STATIC_CACHE = `desert-survival-static-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `desert-survival-runtime-${CACHE_VERSION}`;
 
@@ -14,22 +14,31 @@ const STATIC_ASSETS = [
   './icons/favicon.png',
 ];
 
-// Three.js comes from a CDN. Pre-caching the core module makes the game playable
-// offline on the very FIRST launch (previously it only worked after an online run).
-// The post-processing add-ons are progressive enhancement — the game falls back to a
-// plain render path if they aren't cached — so they're cached best-effort.
-const THREE_BASE = 'https://cdn.jsdelivr.net/npm/three@0.160.0/';
-const CDN_CORE = [THREE_BASE + 'build/three.module.js'];
-const CDN_OPTIONAL = [
+// Three.js is now vendored same-origin under assets/vendor/three (see the importmap note
+// in index.html — the old CDN + importmap `integrity` pinning was silently ignored by
+// Safari and Firefox). The core module is REQUIRED for the game to boot, so it is
+// installed alongside the app shell and a failure to cache it fails the install.
+const THREE_BASE = './assets/vendor/three/';
+const THREE_CORE = [THREE_BASE + 'build/three.module.js'];
+// Post-processing / loaders / merge utils are progressive enhancement — index.html falls
+// back to a plain render path, the procedural camel and unmerged vehicles if any of these
+// fail to load — so they are cached best-effort and never fail the install. Their own
+// relative imports (Pass.js, ShaderPass.js, the shaders/) are listed too, because a
+// half-cached add-on is an add-on that fails to import offline.
+const THREE_OPTIONAL = [
   THREE_BASE + 'examples/jsm/postprocessing/EffectComposer.js',
   THREE_BASE + 'examples/jsm/postprocessing/RenderPass.js',
   THREE_BASE + 'examples/jsm/postprocessing/UnrealBloomPass.js',
   THREE_BASE + 'examples/jsm/postprocessing/SMAAPass.js',
   THREE_BASE + 'examples/jsm/postprocessing/OutputPass.js',
+  THREE_BASE + 'examples/jsm/postprocessing/Pass.js',
+  THREE_BASE + 'examples/jsm/postprocessing/ShaderPass.js',
+  THREE_BASE + 'examples/jsm/postprocessing/MaskPass.js',
+  THREE_BASE + 'examples/jsm/shaders/CopyShader.js',
+  THREE_BASE + 'examples/jsm/shaders/LuminosityHighPassShader.js',
+  THREE_BASE + 'examples/jsm/shaders/OutputShader.js',
+  THREE_BASE + 'examples/jsm/shaders/SMAAShader.js',
   THREE_BASE + 'examples/jsm/loaders/GLTFLoader.js',
-  // Used by optimizeStaticGroup() in index.html to batch each procedural vehicle's ~250
-  // separate meshes down to a handful of draw calls. Progressive enhancement like the
-  // rest: without it the vehicles simply render unmerged.
   THREE_BASE + 'examples/jsm/utils/BufferGeometryUtils.js',
 ];
 
@@ -46,12 +55,11 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(STATIC_CACHE);
-      // Local assets must succeed for a valid install.
-      await cache.addAll(STATIC_ASSETS);
-      // CDN core: try to cache it, but don't fail install if currently offline.
-      try { await cache.addAll(CDN_CORE); } catch (e) { /* will be picked up at runtime */ }
-      // CDN optional add-ons: fully best-effort, one by one.
-      await Promise.all(CDN_OPTIONAL.map((u) =>
+      // App shell + the Three.js core: all same-origin now, and all required for a
+      // playable offline install, so a failure here correctly fails the install.
+      await cache.addAll(STATIC_ASSETS.concat(THREE_CORE));
+      // Optional add-ons: fully best-effort, one by one.
+      await Promise.all(THREE_OPTIONAL.map((u) =>
         cache.add(u).catch(() => { /* progressive enhancement only */ })
       ));
       // Same-origin optional assets: same best-effort treatment.
@@ -102,7 +110,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Same-origin static assets: cache-first
+  // Same-origin static assets (which is now EVERYTHING, including Three.js): cache-first.
+  // caches.match searches every cache, so the install-time STATIC_CACHE copy of
+  // three.module.js is found before any network attempt.
   if (url.origin === self.location.origin) {
     event.respondWith(
       caches.match(req).then((cached) => {
@@ -119,30 +129,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cross-origin (e.g. Three.js from jsdelivr): stale-while-revalidate.
-  // Check ALL caches first (caches.match) so the install-time STATIC_CACHE copy of
-  // three.module.js is found, then refresh into RUNTIME_CACHE in the background.
-  event.respondWith(
-    caches.match(req).then((cached) =>
-      caches.open(RUNTIME_CACHE).then((cache) => {
-        const fetchPromise = fetch(req)
-          .then((res) => {
-            // Only cache a genuinely OK response. Opaque responses were also being
-            // stored, and an opaque body can just as easily be a CDN 404/5xx page — once
-            // written it is served forever offline as if it were the module, permanently
-            // breaking post-processing/GLTF loading with no way for the page to tell.
-            // Every cross-origin request here is a CORS-enabled ES module, so a valid
-            // response is never opaque and nothing is lost by refusing them.
-            if (res && res.ok && res.type !== 'opaque') {
-              cache.put(req, res.clone());
-            }
-            return res;
-          })
-          .catch(() => cached);
-        return cached || fetchPromise;
-      })
-    )
-  );
+  // Nothing cross-origin is fetched any more (the CDN dependency is gone and the CSP
+  // forbids it). Anything that still turns up is left to the browser's default handling
+  // rather than being cached — an opaque body can just as easily be a 404/5xx page, and
+  // once written it would be served forever offline as if it were the real resource.
 });
 
 self.addEventListener('message', (event) => {
