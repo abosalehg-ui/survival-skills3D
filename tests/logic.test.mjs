@@ -404,6 +404,247 @@ test('mulberry32 is deterministic per seed and same-day seeds match', () => {
     assert.notDeepEqual(seqA, seqC, 'different day → different stream');
 });
 
+// =============================================================================
+// DAILY CHALLENGE DETERMINISM
+// =============================================================================
+// The mode's whole promise is "بذرة يومية ثابتة للجميع". It used to be broken in four
+// independent ways at once; these tests pin each of them shut.
+
+const spawnSrc = slice('// @spawnplan-testable-start', '// @spawnplan-testable-end');
+const { planSpawnStep, spawnStepPScale } =
+    new Function(spawnSrc + '\n return { planSpawnStep, spawnStepPScale };')();
+const stormSrc = slice('// @stormsched-testable-start', '// @stormsched-testable-end');
+const { stormStartDistance } = new Function(stormSrc + '\n return { stormStartDistance };')();
+
+const SPAWN_STEP = Number(/const ENDLESS_SPAWN_STEP = ([0-9.]+)/.exec(html)[1]);
+const ROCK_SIZES = JSON.parse(/const ROCK_SIZES = (\[[^\]]+\])/.exec(html)[1]);
+const HOLE_SIZES = JSON.parse(/const HOLE_SIZES = (\[[^\]]+\])/.exec(html)[1]);
+// How the game builds a step's generator (runSpawnStep) and a storm's gap (stormRandFor).
+const stepRng = (seed, i) => mulberry32(hashStr(seed + '#' + i));
+const stormRng = (seed) => (i) => mulberry32(hashStr(seed + '!storm' + i))();
+
+// THE central guarantee. A step's contents must depend ONLY on the seed and the step's
+// world position — never on frame rate, draw order, or how the run is being played.
+test('daily layout is a pure function of (seed, step): frame rate cannot shift it', () => {
+    const seed = '2026-8-22';
+    const forward = [], backward = [];
+    for (let i = 400; i < 900; i++) forward.push(JSON.stringify(planSpawnStep(i, SPAWN_STEP, stepRng(seed, i), ROCK_SIZES, HOLE_SIZES)));
+    // Planning the same steps in the opposite order stands in for any device that reaches
+    // them after a different number of frames / draws.
+    for (let i = 899; i >= 400; i--) backward.unshift(JSON.stringify(planSpawnStep(i, SPAWN_STEP, stepRng(seed, i), ROCK_SIZES, HOLE_SIZES)));
+    assert.deepEqual(forward, backward, 'same seed + same step must give the same plan, always');
+    assert.ok(forward.some(p => JSON.parse(p).obstacle), 'the sampled stretch should contain obstacles');
+});
+
+test('a different day gives a different daily layout', () => {
+    const a = [], b = [];
+    for (let i = 400; i < 700; i++) {
+        a.push(JSON.stringify(planSpawnStep(i, SPAWN_STEP, stepRng('2026-8-22', i), ROCK_SIZES, HOLE_SIZES)));
+        b.push(JSON.stringify(planSpawnStep(i, SPAWN_STEP, stepRng('2026-8-23', i), ROCK_SIZES, HOLE_SIZES)));
+    }
+    assert.notDeepEqual(a, b, 'each day must be its own puzzle');
+});
+
+// A per-step probability above 1 would silently cap the spawn rate and flatten the
+// difficulty ramp at its top end.
+test('per-step spawn probabilities stay below 1 across the whole difficulty ramp', () => {
+    const s = spawnStepPScale(SPAWN_STEP);
+    const maxObstacleP = (0.04 + 0.08) * s;      // ramp caps at +0.08
+    assert.ok(maxObstacleP < 1, `obstacle p saturates at ${maxObstacleP.toFixed(3)}`);
+    assert.ok(0.02 * s < 1 && 0.012 * s < 1, 'fuel/power-up probabilities saturate');
+});
+
+// The conversion from the old per-frame rates must preserve the tuned density, or this
+// silently becomes a balance change wearing a determinism fix's clothes.
+test('distance-indexed spawn density matches the old per-frame rate at cruise', () => {
+    const CRUISE = 18, FPS = 60;
+    // Old: p per frame at 60fps → spawns per metre = p * FPS / CRUISE.
+    // New: p per step → spawns per metre = p_step / step.
+    for (const pFrame of [0.04, 0.08, 0.12]) {
+        const oldPerMetre = pFrame * FPS / CRUISE;
+        const newPerMetre = (pFrame * spawnStepPScale(SPAWN_STEP)) / SPAWN_STEP;
+        assert.ok(Math.abs(oldPerMetre - newPerMetre) < 1e-9,
+            `density drifted at p=${pFrame}: ${oldPerMetre} vs ${newPerMetre}`);
+    }
+});
+
+// userData.radius IS the collision box, so it has to come from the quantised set (a
+// continuous Math.random() draw gave the same daily rock a different hitbox per player).
+test('obstacle sizes come from the quantised sets, preserving the old means', () => {
+    const seed = '2026-8-22';
+    const sizes = { rock: new Set(), hole: new Set() };
+    for (let i = 400; i < 4000; i++) {
+        const p = planSpawnStep(i, SPAWN_STEP, stepRng(seed, i), ROCK_SIZES, HOLE_SIZES);
+        if (p.obstacle) sizes[p.obstacle.type].add(p.obstacle.size);
+    }
+    assert.ok([...sizes.rock].every(s => ROCK_SIZES.includes(s)), 'rock sizes must be quantised');
+    assert.ok([...sizes.hole].every(s => HOLE_SIZES.includes(s)), 'hole sizes must be quantised');
+    assert.ok(sizes.rock.size === ROCK_SIZES.length, 'every rock size should occur over a long run');
+    const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    // Old ranges: rock 0.7 + rand()*1.0 (mean 1.2), hole 1.0 + rand()*0.6 (mean 1.3).
+    assert.ok(Math.abs(mean(ROCK_SIZES) - 1.2) < 0.01, `rock size mean drifted: ${mean(ROCK_SIZES)}`);
+    assert.ok(Math.abs(mean(HOLE_SIZES) - 1.3) < 0.01, `hole size mean drifted: ${mean(HOLE_SIZES)}`);
+});
+
+test('sandstorm starts are seeded, increasing, and independent of how the run is played', () => {
+    const r = stormRng('2026-8-22');
+    const a = [0, 1, 2, 3, 4].map(i => stormStartDistance(i, r));
+    const b = [4, 3, 2, 1, 0].map(i => stormStartDistance(i, r)).reverse();
+    assert.deepEqual(a, b, 'a storm start must not depend on when it is asked for');
+    for (let i = 1; i < a.length; i++) assert.ok(a[i] > a[i - 1], 'storm starts must increase');
+    // Each gap is 1200..2000 m; a 12 s storm covers at most ~378 m even under boost, so a
+    // storm can never overrun the next scheduled start.
+    for (let i = 1; i < a.length; i++) {
+        const gap = a[i] - a[i - 1];
+        assert.ok(gap >= 1200 && gap <= 2000, `gap out of range: ${gap}`);
+    }
+    assert.notDeepEqual(a, [0, 1, 2, 3, 4].map(i => stormStartDistance(i, stormRng('2026-8-23'))),
+        'different day → different storm placement');
+});
+
+// Static guards for the two leaks that live in control flow rather than in a pure function.
+test('the endless spawner no longer draws once per rendered frame', () => {
+    // Comment lines are stripped first: the replacement's own explanation quotes the old
+    // per-frame spawner verbatim, and a guard that trips on its own documentation is worse
+    // than no guard at all.
+    const code = html.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    assert.ok(!code.includes('const spawnScale = delta * 60'),
+        'spawnScale is the per-frame spawner: draws must be indexed by distance, not frames');
+    assert.ok(code.includes('runSpawnStep(stepIndex'), 'expected the distance-cursor spawner');
+});
+
+test('recycling an obstacle cannot change the hitbox a player meets', () => {
+    const start = html.indexOf('function acquireObstacle(');
+    const src = html.slice(start, html.indexOf('function acquireFuelCan(', start));
+    assert.ok(src.includes("spec.type + ':' + spec.size"),
+        'pooled obstacles must be matched on BOTH type and size, or the pool decides the hitbox');
+});
+
+// =============================================================================
+// COLLISION / BALANCE REGRESSIONS
+// =============================================================================
+
+// The bug: removeInteractive() sat OUTSIDE the invulnerability check, so for half a second
+// after any impact every obstacle touched was deleted for free.
+test('post-hit invulnerability passes through obstacles instead of deleting them', () => {
+    const start = html.indexOf('function checkCollisions()');
+    const end = html.indexOf('function updateCargo(', start);
+    const src = html.slice(start, end);
+    const guard = src.indexOf('CONFIG.damage.invulnSeconds) continue;');
+    assert.ok(guard !== -1, 'expected an early-out `continue` for the i-frame window');
+    const remove = src.indexOf('removeInteractive(obstacle', guard);
+    assert.ok(remove !== -1, 'obstacle removal should still happen after the guard');
+    // Nothing may remove an obstacle BEFORE the guard is applied.
+    assert.ok(src.slice(0, guard).indexOf('removeInteractive(obstacle') === -1,
+        'an obstacle removed before the i-frame check is a free kill during invulnerability');
+});
+
+test('boost is a range trade, not a free +50%', () => {
+    const mult = Number(/boostMultiplier:\s*([0-9.]+)/.exec(html)[1]);
+    const burn = Number(/boostFuelMultiplier:\s*([0-9.]+)/.exec(html)[1]);
+    // Fuel burn is per SECOND, so distance-per-fuel scales with speed/burn.
+    assert.ok(burn > mult,
+        `boost must cost range: speed x${mult} against burn x${burn} is still a free win`);
+    const rangeRatio = mult / burn;
+    assert.ok(rangeRatio > 0.85,
+        `boost costs ${((1 - rangeRatio) * 100).toFixed(0)}% of range — that makes the pickup a trap`);
+});
+
+// The tightest routes are tuned to within ~2% of a full tank, and the fuel-can spawn loop
+// is a chain of independent coin flips — so a bad seed could make a route arithmetically
+// unwinnable before the player turned a wheel. This mirrors the top-up in setupLevel.
+test('every level is completable by every vehicle once the guaranteed cans are counted', () => {
+    for (let lvl = 0; lvl < LEVEL_DISTANCES.length; lvl++) {
+        VEHICLE_STATS.forEach((v, vi) => {
+            const burnPerSec = LEVEL_BURN[lvl] * 60 * v.eff;
+            const needed = burnPerSec * (LEVEL_DISTANCES[lvl] / v.speed);
+            const deficit = needed * 1.15 - v.cap;
+            const minCans = Math.max(0, Math.ceil(deficit / 10));
+            const budget = v.cap + minCans * 10;
+            assert.ok(budget >= needed * 1.15 - 1e-9,
+                `level ${lvl + 1}, vehicle ${vi}: ${budget.toFixed(1)} fuel available vs ${(needed * 1.15).toFixed(1)} needed`);
+            // And the guarantee must stay a safety net, not a handout.
+            assert.ok(minCans <= 4, `level ${lvl + 1}, vehicle ${vi}: ${minCans} guaranteed cans is too generous`);
+        });
+    }
+});
+
+// =============================================================================
+// SETTINGS / ACCESSIBILITY
+// =============================================================================
+
+test('every rebindable action ships with a usable default binding', () => {
+    const block = html.slice(html.indexOf('const DEFAULT_KEYS = {'), html.indexOf('const KEY_ACTIONS = ['));
+    const actions = [...block.matchAll(/(\w+):\s*\[([^\]]+)\]/g)];
+    assert.ok(actions.length >= 5, `expected 5 bindable actions, found ${actions.length}`);
+    const seen = new Set();
+    for (const [, name, list] of actions) {
+        const keys = list.split(',').map(s => s.trim().replace(/^['"]|['"]$/g, ''));
+        assert.ok(keys.length && keys.every(k => k.length), `${name} has an empty default binding`);
+        for (const k of keys) {
+            assert.ok(!seen.has(k.toLowerCase()), `${k} is bound to two actions by default`);
+            seen.add(k.toLowerCase());
+        }
+    }
+    // And the settings screen must actually expose them, or they are not rebindable.
+    assert.ok(html.includes('id="keyBindings"') && html.includes('syncKeyBindingsUI'),
+        'the rebinding UI is missing');
+});
+
+test('selection cards are reachable and operable from the keyboard', () => {
+    const fn = html.slice(html.indexOf('function makeCardActivatable('), html.indexOf('function populateModeGrid('));
+    assert.ok(/card\.tabIndex\s*=\s*0/.test(fn), 'cards need a tab stop');
+    assert.ok(/role',\s*'button'/.test(fn), 'cards need button semantics');
+    assert.ok(fn.includes("'Enter'") && fn.includes("' '"), 'cards must activate on Enter/Space');
+    // Every grid must go through the helper — a raw click listener is a keyboard dead end.
+    for (const grid of ['populateModeGrid', 'populateVehicleGrid', 'populateLevelGrid']) {
+        const src = html.slice(html.indexOf(`function ${grid}(`), html.indexOf('\n        function ', html.indexOf(`function ${grid}(`) + 10));
+        assert.ok(src.includes('makeCardActivatable'), `${grid} still builds unreachable cards`);
+        assert.ok(!/card\.addEventListener\('click'/.test(src), `${grid} still binds a bare click handler`);
+    }
+});
+
+test('the defeat cinematic is short and skippable; victory is not cut short', () => {
+    const win = Number(/rotationDuration:\s*([0-9.]+)/.exec(html)[1]);
+    const lose = Number(/loseRotationDuration:\s*([0-9.]+)/.exec(html)[1]);
+    assert.ok(lose < win, `defeat orbit (${lose}s) must be shorter than victory (${win}s)`);
+    assert.ok(lose <= 2, `${lose}s between death and retry is still too long for an arcade loop`);
+    const fn = html.slice(html.indexOf('function skipCinematic()'), html.indexOf('function updateCameraRotation('));
+    assert.ok(fn.includes("state.cameraRotationType !== 'lose'"),
+        'only the defeat orbit may be skippable — a win is the payoff');
+});
+
+test('the first-run tutorial is a handful of lines, not a wall', () => {
+    const short = html.slice(html.indexOf('id="tutorialShort"'), html.indexOf('id="tutorialFull"'));
+    const items = (short.match(/<li>/g) || []).length;
+    assert.ok(items > 0 && items <= 4, `first-run tutorial has ${items} bullets; keep it to 3-4`);
+    assert.ok(html.includes('id="tutorialFull"'), 'the full reference must still be reachable');
+    // The bullets that were dropped must have a contextual home instead.
+    for (const id of ['pwBoost', 'pwShield', 'pwFuel', 'obstacle', 'fuelCan', 'throttle']) {
+        assert.ok(html.includes(`maybeHint('${id}'`), `no contextual hint replaced the '${id}' tutorial line`);
+    }
+});
+
+test('the daily challenge pins the vehicle so shared scores are comparable', () => {
+    assert.ok(/const DAILY_VEHICLE_ID = '(\w+)'/.test(html), 'daily mode must fix the vehicle');
+    const id = /const DAILY_VEHICLE_ID = '(\w+)'/.exec(html)[1];
+    assert.ok(html.includes(`id: '${id}'`), `DAILY_VEHICLE_ID '${id}' is not a real vehicle`);
+    assert.ok(html.includes('state.daily ? DAILY_VEHICLE_ID : state.pendingVehicleId'),
+        'beginRun must force the daily vehicle');
+});
+
+test('daily runs do not write into the free-run endless record', () => {
+    const start = html.indexOf('function gameOver(');
+    const src = html.slice(start, html.indexOf('function buildLevelWithLoader(', start));
+    const dailyBranch = src.indexOf('if (state.daily) {');
+    const bestWrite = src.indexOf('endless.bestDistance =');
+    assert.ok(dailyBranch !== -1 && bestWrite !== -1, 'expected both branches in gameOver');
+    assert.ok(src.includes('} else {') && bestWrite > dailyBranch,
+        'the endless record must sit in the non-daily branch');
+    assert.ok(!/if \(state\.daily\)[\s\S]{0,400}runsCompleted\+\+/.test(src),
+        'a daily run must not count as an endless run');
+});
+
 if (failures) {
     console.error(`\n${failures} test(s) failed`);
     process.exit(1);

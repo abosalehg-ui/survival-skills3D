@@ -32,5 +32,17 @@ jobs:
       - name: Syntax-check the service worker
         run: node --check service-worker.js
 
+      # `node --check` proves the module parses; it says nothing about whether the script
+      # still matches the markup around it. A renamed or deleted element id sails past the
+      # syntax check and kills the game at runtime instead.
+      - name: Check every referenced DOM id exists
+        run: node tools/check-dom-ids.mjs index.html
+
       - name: Run logic tests
         run: node tests/logic.test.mjs
+
+      # Three.js is vendored under assets/vendor/three. Re-hash it against the upstream
+      # release so a local edit (accidental or otherwise) to a 1.4 MB dependency cannot pass
+      # unnoticed. The script skips itself if the network is unavailable.
+      - name: Verify the vendored Three.js against upstream
+        run: node tools/verify-vendor.mjs 0.160.0 assets/vendor/three
